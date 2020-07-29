@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from pulpstimgen.skeleton import fib
+from dumpling.skeleton import fib
 
 __author__ = "Manuel Eggimann"
 __copyright__ = "Manuel Eggimann"

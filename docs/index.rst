@@ -1,8 +1,8 @@
 ===========
-pulpstimgen
+dumpling
 ===========
 
-This is the documentation of **pulpstimgen**.
+This is the documentation of **dumpling**.
 
 .. note::
 
