@@ -1,9 +1,72 @@
+import re
 import textwrap
 from pathlib import Path
-from typing import Mapping, List
+from typing import Mapping, List, TextIO
 
 from dumpling.Common.VectorBuilder import VectorBuilder
 from mako.template import Template
+
+class HP93000VectorReader:
+    matchers = {
+    'empty_line' : re.compile(r'^\s*$'),
+    'format_stmt' : re.compile(r'FORMAT\s+(?P<ports>(\w+(?:\s+|;))+)'),
+    'port_stmt' : re.compile(r'PORT\s+\w*\s*;'),
+    'normal_vec' : re.compile(r'R(?P<repeat>\d+)\s+(?P<dvc_name>\w*)\s+(?P<pin_state>\w+)\s+(?:\[%]\s*(?P<comment>.*);)?'),
+    'match_loop_begin' : re.compile(r'SQPG\s+MACT\s+(?P<retries>\d+)\s*;'),
+    'match_loop_idle_begin' : re.compile(r'SQPG\s+MRPT\s+(?P<idle_vectors>\d+)\s*;'),
+    'match_loop_end' : re.compile(r'SQPG\s+PADDING\s*;'),
+    'loop_begin' : re.compile(r'SQPG\s+LBGN\s+(?P<count>\d+)\s*;'),
+    'loop_end' : re.compile(r'SQPG\s+LEND\s*;')
+    }
+
+    def __init__(self, stimuli_file_path: Path, pins: Mapping[str, Mapping]):
+        self.stimuli_file_path = stimuli_file_path
+        self.pins = pins
+        self.pin_order = None
+        self.physical_to_logical_map = {pin['name']: logical_name for logical_name, pin in pins.items()}
+
+    def __enter__(self):
+        self._file = self.stimuli_file_path.open('r')
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._file.close()
+
+    def vectors(self):
+        for line in self._file:
+            stm_type = None
+            match = None
+            for stm_type, matcher in HP93000VectorReader.matchers.items():
+                match = matcher.match(line)
+                if match:
+                    break
+            if not match:
+                raise ValueError("Could not parse line: {}".format(line))
+
+            if stm_type == 'empty_line':
+                pass
+            elif stm_type == 'format_stmt':
+                self.pin_order = str.split(match.group('ports'))
+            elif stm_type == 'port_stmt':
+                pass #Ignore this statement
+            elif stm_type == 'normal_vec':
+                if self.pin_order: #Make sure we already read the format statement
+                    pin_state = {self.physical_to_logical_map[self.pin_order[i]]: value for i, value in enumerate(match.group('pin_state'))}
+                    yield {'type': 'vec', 'vector': pin_state, 'repeat': int(match.group('repeat')), 'comment': match.group('comment')}
+                else:
+                    raise ValueError("Encountered vector statement before reading format statement")
+            elif stm_type == 'match_loop_begin':
+                condition_vectors = list(self.vectors())
+                idle_vectors = list(self.vectors())
+                yield {'type': 'match_loop', 'cond_vectors': condition_vectors, 'idle_vectors': idle_vectors, 'retries': int(match.group('retries'))}
+            elif stm_type == 'match_loop_idle_begin':
+                return
+            elif stm_type == 'match_loop_end':
+                return
+            elif stm_type == 'loop_begin':
+                body = list(self.vectors())
+                yield list({'type': 'loop', 'loop_body': body, 'repeat': int(match.group('count'))})
+
 
 
 class HP93000VectorWriter:
@@ -83,3 +146,14 @@ class HP93000VectorWriter:
             if self.port:
                 stimuli_file.write("PORT " + self.port + " ;\n")
             stimuli_file.write("FORMAT " + ' '.join([pin['name'] for logical_name, pin in sorted(self.pins.items())]) + " ;\n")
+
+
+
+pins = {
+        'chip_reset' : {'name': 'pad_reset_n', 'default': '0'},
+        'trst': {'name': 'pad_jtag_trst', 'default': '1'},
+        'tms': {'name': 'pad_jtag_tms', 'default': '0'},
+        'tck': {'name': 'pad_jtag_tck', 'default': '0'},
+        'tdi': {'name': 'pad_jtag_tdi', 'default': '0'},
+        'tdo': {'name': 'pad_jtag_tdo', 'default': 'X'}
+    }
