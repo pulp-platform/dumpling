@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import cocotb
+from dumpling.Common.HP93000 import HP93000VectorReader
 from cocotb.binary import BinaryValue
 from cocotb.triggers import Timer
 
@@ -128,10 +131,18 @@ class CocotbDriver:
         return wavefun
 
     def __init__(self, pins, dut):
-        super().__init__(pins)
+        self.pins = pins
         self.dut = dut
         self.vectors = []
         self.dut = dut
+
+    async def simulate_avc(self, avc_path: Path):
+        self.dut._log.info("Applying vector from file {} to DUT.".format(avc_path))
+        with HP93000VectorReader(avc_path, self.pins) as reader:
+            passed = True
+            for vector in reader.vectors():
+                passed &= await self.apply_vector(vector)
+            return passed
 
     async def apply_vectors(self, vectors):
         self.dut._log.info("Applying {} vectors to DUT...".format(len(vectors)))
