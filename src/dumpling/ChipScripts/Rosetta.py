@@ -42,7 +42,7 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 @click.group()
 @click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
 @click.option("--wtb-name", '-w', type=str, default="multiport_ext_clk_wvtbl", show_default=True)
-@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), required=True)
+@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
 def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
