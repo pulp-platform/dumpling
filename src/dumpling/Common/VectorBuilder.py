@@ -84,6 +84,9 @@ class VectorBuilder:
         else:
             raise AttributeError()
 
+    def init(self):
+        self.__dict__['pin_state'] = {logical_name: pin_desc['default'] for logical_name, pin_desc in self.pins.items()}
+
     def vector(self, repeat=1, comment=""):
         vector = {'type': 'vec', 'vector': copy.deepcopy(self.pin_state), 'repeat': repeat, 'comment': comment}
         return vector

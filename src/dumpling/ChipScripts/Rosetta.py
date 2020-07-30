@@ -1,12 +1,13 @@
-import contextlib
 import re
 from pathlib import Path
 
+import bitstring
 import click
 from dumpling.Common.ElfParser import ElfParser
 from bitstring import BitArray
+bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
-from dumpling.Common.PulpJTAGTapRosetta import PULPJTagTapRosetta
+from dumpling.JTAGTaps.PulpJTAGTapRosetta import PULPJTagTapRosetta
 from dumpling.Common.VectorBuilder import VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
@@ -14,7 +15,7 @@ from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
 
 pins = {
-        'chip_reset' : {'name': 'pad_reset_n', 'default': '0'},
+        'chip_reset' : {'name': 'pad_reset_n', 'default': '1'},
         'trst': {'name': 'pad_jtag_trst', 'default': '1'},
         'tms': {'name': 'pad_jtag_tms', 'default': '0'},
         'tck': {'name': 'pad_jtag_tck', 'default': '0'},
@@ -49,6 +50,7 @@ def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
     """Generate stimuli for the TSMC65 Rosetta chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
+    vector_builder.init()
     ctx.obj = HP93000VectorWriter(stimuli_file_path=Path(output), pins=pins, port=port_name, device_cycle_name=device_cycle_name, wtb_name=wtb_name)
 
 
@@ -63,7 +65,7 @@ def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
 @pass_VectorWriter
 def write_soc_config(vector_writer: HP93000VectorWriter, elf, return_code, wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
     """
-    Writes the given static configuration value to the apb_soc_ctrl register
+    Writes the given static configuration value to the apb_soc_ctrl register.
 
     """
     with vector_writer as writer:
@@ -181,6 +183,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops  in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
+@click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @pass_VectorWriter
 def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop):
     """
@@ -197,6 +200,10 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
     #Parse all address value mappings and store the result in a list of tuples
     data = []
     pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-f]{0,8})(?:#(?P<comment>.*))?")
+
+    #Use stdin if the user did not provide any arguments
+    if not address_value_mappings:
+        address_value_mappings = click.get_text_stream('stdin')
     for mapping in address_value_mappings:
         match = pattern.match(mapping)
         if not match:
@@ -221,8 +228,9 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
 @rosetta.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
+@click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @pass_VectorWriter
-def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop):
+def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool):
     """
     Perform read transactions on the system bus and compare the values with expected ones
 
@@ -244,31 +252,79 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop)
             data.append((BitArray(match.group('address')), BitArray(match.group('value')), match.group('comment')))
 
     with vector_writer as writer:
+        vector_builder.init()
         vectors = pulp_tap.init_pulp_tap()
         for address, value, comment in data:
             if loop:
                 vectors += pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
             else:
                 vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
-            writer.write_vectors(vectors, vectors)
+            writer.write_vectors(vectors, vectors, compress=compress)
 
 @rosetta.command()
-@click.argument('expected_pc', type=str)
-@click.option('--resume/--no-resume', show_default=True, default=False, help="Resume the core after reading the program counter.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
 @pass_VectorWriter
-def halt_core_verify_pc(vector_writer: HP93000VectorWriter, expected_pc, resume):
-    """Halt the core, read the program counter comparing it with EXPECTED_PC and resume the core.
+def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
+    """
+    Generate vectors to resume the core.
 
-    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt the core,
-    read the programm counter and (optionally) resume the core.
+    The vectors will instruct the RISC-V debug module via JTAG to resume the core and after a configurable number of JTAG clock cycles will verify that the core is in the 'running' state.
     """
     with vector_writer as writer:
         vectors = riscv_debug_tap.init_dmi()
-        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=100)
-        expected_pc = BitArray(expected_pc)
-        expected_pc = (32-len(expected_pc)) + expected_pc #Extend to 32-bit
-        vectors += riscv_debug_tap.read_reg_abstract_cmd_no_loop(RISCVReg.CSR_DPC, BitArray(expected_pc,length=32).bin, wait_cycles=100, comment="Reading DPC")
-        if resume:
-            vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, comment="Resuming the core", wait_cycles=100)
+        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles)
+        writer.write_vectors(vectors)
+
+@rosetta.command()
+@click.option('--reset-cycles','-r', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to assert the chip reset line.")
+@pass_VectorWriter
+def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
+    """
+    Generate vectors to reset the core and the jtag interface
+
+    """
+    with vector_writer as writer:
+        vectors = []
+        vector_builder.chip_reset = 0
+        vectors += [vector_builder.vector(reset_cycles, comment="Assert chip reset")]
+        vector_builder.chip_reset = 1
+        vectors += jtag_driver.jtag_reset()
+        vectors += jtag_driver.jtag_idle_vectors(10)
+        vectors += riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.set_dmactive(True)
+        vectors += jtag_driver.jtag_idle_vectors(10)
+        writer.write_vectors(vectors)
+
+@rosetta.command()
+@click.option('--pc', type=str, help="Read programm counter and compare it with the expected value provided")
+@click.option('--resume/--no-resume', show_default=True, default=False, help="Resume the core after reading the program counter.")
+@click.option('--assert-reset', is_flag=True, show_default=True, default=False, help="Assert the chip reset line for the whole duration of the generated vectors.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually halted.")
+@pass_VectorWriter
+def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_reset, wait_cycles):
+    """Halt the core, optionally reading the program counter and resuming the core.
+
+    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt the core,
+    optionally read the programm counter and optionally resume the core.
+
+    E.g.::
+    dumpling rosetta -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
+
+    Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
+
+    The --assert-reset flag allows to keep the reset line asserted during the exeuction of core halt procedure. This allows to halt the core before it statrts to execute
+    random data right after reset.
+    """
+    with vector_writer as writer:
+        if assert_reset:
+            vector_builder.chip_reset = 0
+        vectors = riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=wait_cycles)
+        if pc:
+            expected_pc = BitArray(pc)
+            expected_pc = (32-len(expected_pc)) + expected_pc #Extend to 32-bit
+            vectors += riscv_debug_tap.read_reg_abstract_cmd_no_loop(RISCVReg.CSR_DPC, BitArray(expected_pc,length=32).bin, wait_cycles=wait_cycles, comment="Reading DPC")
+            if resume:
+                vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, comment="Resuming the core", wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 

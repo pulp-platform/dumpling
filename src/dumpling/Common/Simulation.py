@@ -5,7 +5,7 @@ from dumpling.Common.HP93000 import HP93000VectorReader
 from cocotb.binary import BinaryValue
 from cocotb.triggers import Timer
 
-class CocotbDriver:
+class CocotbVectorDriver:
     """A mockup VectorWriter class to simulate the application of the stimuli with
     an RTL simulator. The CocotbDriver can be used like a normal VectorWriter
     (e.g. the HP93000VectorWriter). When you finished recording vectors (e.g.
@@ -152,7 +152,7 @@ class CocotbDriver:
         return passed
 
     async def apply_vector(self, vector):
-        if vector.get('comment', '') != '':
+        if vector.get('comment', '') not in ['', None]:
             self.dut._log.info(vector['comment'])
         if vector['type'] == 'vec':
             return_value = True

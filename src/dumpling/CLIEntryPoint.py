@@ -31,4 +31,4 @@ cli.add_command(Rosetta.rosetta)
 # For debugging purposes only
 if __name__ == '__main__':
     #cli(['rosetta', '-o' 'test.avc', 'write-mem', '0x1c008080=0xdeadbeef'])
-    cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc', '0x0'])
+    cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc'])
