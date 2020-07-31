@@ -104,7 +104,7 @@ class PULPJtagTap(JTAGTap):
         burst += 32 * 'X'  # Ignore the CRC
         # Shift DR until we see a status=1 bit
         # In this matched_loop-free version of read_burst we assume the status bit to raise with the third jtag shift
-        vectors += self.driver.jtag_shift('00', '01', comment="Shift until status bit is 1", noexit=True)
+        vectors += self.driver.jtag_shift('0000', '0001', comment="Shift until status bit is 1", noexit=True)
         # Now we shift the actual data
         vectors += self.driver.jtag_shift(len(burst) * '0',
                                           expected_chain=burst)  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not

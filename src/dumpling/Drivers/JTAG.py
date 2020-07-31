@@ -46,7 +46,6 @@ class JTAGDriver:
         Adds a new JTAG TAP to the chain controlled by this driver instance.
 
         The TAPs are supposed to be added in the same order that the TDI signal passes through them.
-
         E.g. if the TDI enters the chip, passes TAP1, leaves TAP1 through it's TDO, enters TAP2 through the TDI and finally leaves the chip through TDO,
         register the TAPs in the following order::
 
