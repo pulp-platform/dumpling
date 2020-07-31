@@ -171,10 +171,10 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
         # Wait for end of computation by polling EOC register address
         if return_code != None:
             if eoc_wait_cycles <= 0:
-                vectors = riscv_debug_tap.wait_for_end_of_computation(0, idle_vector_count=100, max_retries=10)
+                vectors = riscv_debug_tap.wait_for_end_of_computation(return_code, idle_vector_count=100, max_retries=10)
             else:
                 vectors = [jtag_driver.jtag_idle_vector(repeat=1000, comment="Waiting for computation to finish before checking EOC register.")]
-                vectors += riscv_debug_tap.check_end_of_computation(0, wait_cycles=10)
+                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=10)
             vector_writer.write_vectors(vectors, compress=compress)
 
 
