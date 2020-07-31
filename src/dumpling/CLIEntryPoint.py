@@ -3,7 +3,7 @@ import dumpling.ChipScripts.Rosetta as Rosetta
 
 import click
 import click_completion
-from dumpling.Common.HP93000 import HP93000VectorWriter
+from dumpling.ChipScripts import Vega
 
 click_completion.init()
 
@@ -26,6 +26,7 @@ def install(append, case_insensitive, shell, path):
 
 # Register first level subcommand
 cli.add_command(Rosetta.rosetta)
+cli.add_command(Vega.vega)
 
 
 # For debugging purposes only
