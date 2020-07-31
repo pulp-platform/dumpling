@@ -206,20 +206,20 @@ class PULPJtagTap(JTAGTap):
 
         vectors = []
 
-        #Split the stimuli into bursts
+        # Split the stimuli into bursts
         burst_data = []
         start_addr = None
-        current_addr = None
-        for addr, word in stimuli.items():
-            #If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
-            if current_addr and (current_addr+4 != int(addr) or len(burst_data)>=256):
-                    vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data, retries=retries)
-                    start_addr = current_addr
-                    burst_data = []
-            current_addr = int(addr)
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
             if not start_addr:
-                start_addr = current_addr
-            burst_data.append(BitArray(uint=word, length=32))
+                start_addr = int(addr)
+            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
+            if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
+                vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)
+                start_addr = int(addr)
+                burst_data = []
+            prev_addr = int(addr)
+            burst_data.append(BitArray(uint=int(word), length=32))
 
         #Create the final burst
         vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)
@@ -235,17 +235,17 @@ class PULPJtagTap(JTAGTap):
         # Split the stimuli into bursts
         burst_data = []
         start_addr = None
-        current_addr = None
-        for addr, word in stimuli.items():
-            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
-            if current_addr and (current_addr + 4 != int(addr) or len(burst_data) >= 256):
-                vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
-                start_addr = current_addr
-                burst_data = []
-            current_addr = int(addr)
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
             if not start_addr:
-                start_addr = current_addr
-            burst_data.append(BitArray(uint=word, length=32))
+                start_addr = int(addr)
+            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
+            if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
+                vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
+                start_addr = int(addr)
+                burst_data = []
+            prev_addr = int(addr)
+            burst_data.append(BitArray(uint=int(word), length=32))
 
         # Create the final burst
         vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
