@@ -466,7 +466,7 @@ class RISCVDebugTap(JTAGTap):
         vectors += self.read_debug_reg_no_loop(DMRegAddress.SBDATA0, expected_data.bin, wait_cycles=wait_cycles)
         return vectors
 
-    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10):
+    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
         # Enable sbreadonaddr by writing appropriate values to SBCS register
         sbcs_value = BitArray(32)
         sbcs_value[29:32] = 1
@@ -478,11 +478,11 @@ class RISCVDebugTap(JTAGTap):
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
-        vectors += self.readMem_no_loop(BitArray('0x1a1040a0'), expected_eoc_value, wait_cycles=wait_cycles, comment="Check for end of computation with expected return code {}".format(
+        vectors += self.readMem_no_loop(BitArray(eoc_reg_addr), expected_eoc_value, wait_cycles=wait_cycles, comment="Check for end of computation with expected return code {}".format(
             expected_return_code))
         return vectors
 
-    def wait_for_end_of_computation(self, expected_return_code: int, idle_vector_count=10, max_retries=10):
+    def wait_for_end_of_computation(self, expected_return_code: int, idle_vector_count=10, max_retries=10, eoc_reg_addr = '0x1a1040a0'):
         # Enable sbreadonaddr by writing appropriate values to SBCS register
         sbcs_value = BitArray(32)
         sbcs_value[29:32] = 1
@@ -494,7 +494,7 @@ class RISCVDebugTap(JTAGTap):
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
-        condition_vectors = self.readMem(BitArray('0x1a1040a0'), expected_eoc_value, retries=max_retries, comment="Wait for end of computation with expected return code {}".format(
+        condition_vectors = self.readMem(BitArray(eoc_reg_addr), expected_eoc_value, retries=max_retries, comment="Wait for end of computation with expected return code {}".format(
             expected_return_code))
         # Pad the condition vectors to be a multiple of 8
         condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
