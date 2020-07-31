@@ -19,6 +19,8 @@
 #
 # Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
 #
+from pathlib import Path
+from typing import Union
 
 from elftools.elf.elffile import ELFFile
 import os
@@ -28,6 +30,9 @@ import logging
 
 
 class ElfParser(object):
+    """
+    A helper class to parse ELF binaries and extract the relevant segments for preloading as well as the start address.
+    """
 
     def __init__(self, verbose=False):
         self.binaries = []
@@ -37,12 +42,30 @@ class ElfParser(object):
         logging.info('Created stimuli generator')
 
     def get_entry(self):
+        """
+        Return the entry point of the ELF binary (the address where the core should start execution).
+
+        Returns:
+            int: The entry point address as an integer.
+
+        """
         with open(self.binaries[0], 'rb') as file:
             elffile = ELFFile(file)
             return elffile.header['e_entry']
 
 
-    def add_binary(self, binary):
+    def add_binary(self, binary: Union[str, os.PathLike]):
+        """
+        Add an additional binary to the ElfParser instance.
+
+        All binaries added will be parsed together when `parse_binaries()` is called.
+
+        Args:
+            binary: A path to the binary to be added to the parser instance.
+
+        Returns:
+
+        """
         logging.info('Added binary: %s', binary)
         self.binaries.append(binary)
 

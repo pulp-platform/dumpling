@@ -6,37 +6,48 @@ from cocotb.binary import BinaryValue
 from cocotb.triggers import Timer
 
 class CocotbVectorDriver:
-    """A mockup VectorWriter class to simulate the application of the stimuli with
-    an RTL simulator. The CocotbDriver can be used like a normal VectorWriter
-    (e.g. the HP93000VectorWriter). When you finished recording vectors (e.g.
-    using the JTagDriver class) you can use the run_vectors() coroutine to in a
-    cocotb testbench to start applying stimuli to your device under test
-    applying the vectors you "wrote" with the vector writer.
+    """
+    A class to simulate the application of vectors with
+    an RTL simulator.
 
-    In addition to keys described in the BaseClass 'VectorWriter' the
-    CocotbDriver expects the pinlist 'pins' to contain a wavefun key for each
-    pin with an associated coroutine function that will be used to apply values
-    to the signal or sample them. This allows to mimick the behavior of the
-    ASIC tester wavetable by arbitrary shifting the time were data is applied
-    or sampled.
+    The class mimics the behavior of the ASIC tester's wave table. It provides cocotb coroutines that apply the given
+    vectors to a device under test. It addition to the dut handle to which the vectors are applied that constructor also
+    expects the pins declaration corresponding to the vectors according to the format specified in `VectorBuilder`
+    docstring. There is however one additional key that needs to be provided for each pin:
 
-    Each wavefunction is supposed to have the following signature::
+    The CocotbDriver expects the pinlist 'pins' to contain a wavefun key for each pin with an associated coroutine
+    function that will be used to apply values to the signal or sample them. This allows to mimick the behavior of the
+    ASIC tester wavetable by arbitrary shifting the time were data is applied or sampled.
+
+    Each wavefunction is supposed to have the signature like the following example wavefunction::
 
        async def my_stimuli_appl_fun(signal, value):
          await cocotb.trigger.Timer('2', units='ns') #Wait 2ns
          signal <= value
 
-    The CocotbDriver will await the supplied coroutine for each pin supplying the cocotb pin signal handle to 'signal' and the value of the current vector to 'value' as arguments to the
-    coroutine function.
+    signals is a CocoTB simulation object handle (a signal handle) and value is the pin state character of the pin
+    for the current vector.
+    The example wavefunction from above will advance simulation time by 2ns before applying the value to the signals.
 
-    The CocotbDriver class contains static helper functions to generate wavefunction coroutine for commonly used wavetable schemes ('simple_clock_gen_wavefun', 'simple_stimuli_appl_wavefun' and
-    'simple_response_acq_wavefun').
+    The CocotbVectorDriver will fork the supplied coroutine for each pin supplying the cocotb pin signal handle to
+    'signal' and the value of the current vector to 'value' as arguments to the coroutine function. After all
+    wavefunction coroutines have terminated, the driver proceeds with applying the next vectors. It is good practice to
+    have all wavefunctions associated with each pin consume the same amount of simulated time (i.e. the period of the
+    device cycle on the ASIC tester)
+
+    The CocotbDriver class contains static helper functions to generate wavefunction coroutines for commonly used
+    wavetable schemes ('simple_clock_gen_wavefun', 'simple_stimuli_appl_wavefun' and 'simple_response_acq_wavefun').
 
     Args:
         pins: The pins description dictionary as described in the Docstring of VectorWriter.
         dut: The cocotb design under thest simulation handle i.e. the toplevel module where stimuli should be applied to.
 
+    See Also:
+        - CocoTB Documentation: https://docs.cocotb.org/en/stable/
+        - Documentation of the apply_vector method.
+
     """
+
     @staticmethod
     def simple_clock_gen_wavefun(period_ps, duty_cycle=0.5 ,start_high=False, idle_low=True):
         """
@@ -137,6 +148,19 @@ class CocotbVectorDriver:
         self.dut = dut
 
     async def simulate_avc(self, avc_path: Path):
+        """
+        A Coroutine that parses and iteratively applies all vectors from an AVC file to the device under test.
+
+        Args:
+            avc_path: The path of the AVC files who's vectors shall be applied to the DUT.
+
+        Returns:
+            bool: True, if all vectors were applied without any missmatches, False otherwise.
+
+        See Also:
+            `apply_vector`
+
+        """
         self.dut._log.info("Applying vector from file {} to DUT.".format(avc_path))
         with HP93000VectorReader(avc_path, self.pins) as reader:
             passed = True
@@ -145,6 +169,16 @@ class CocotbVectorDriver:
             return passed
 
     async def apply_vectors(self, vectors):
+        """
+        Apply a list of vectors in intermediate representation to the DUT.
+
+        Args:
+            vectors:
+
+        Returns:
+            bool: True if all vectors passed (had no missmatches), False otherwise.
+
+        """
         self.dut._log.info("Applying {} vectors to DUT...".format(len(vectors)))
         passed = True
         for vector in vectors:
@@ -152,6 +186,19 @@ class CocotbVectorDriver:
         return passed
 
     async def apply_vector(self, vector):
+        """
+        Applies a single vector in intermediate representation (dictionary) to the DUT.
+
+        This coroutine will print the annotated comment of the vector (if not None or "") to the simulation log and
+        applies the vector to the DUT (appropriately handling matched_loops, normal loops and the 'repeat' value of
+        normal vectors.
+
+        Args:
+            vector: The vector to apply to the DUT
+
+        Returns:
+            True, if there was a missmatch during application of the vector, False otherwise
+        """
         if vector.get('comment', '') not in ['', None]:
             self.dut._log.info(vector['comment'])
         if vector['type'] == 'vec':
