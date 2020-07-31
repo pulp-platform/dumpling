@@ -65,7 +65,9 @@ class HP93000VectorReader:
                 return
             elif stm_type == 'loop_begin':
                 body = list(self.vectors())
-                yield list({'type': 'loop', 'loop_body': body, 'repeat': int(match.group('count'))})
+                yield {'type': 'loop', 'loop_body': body, 'repeat': int(match.group('count'))}
+            elif stm_type == 'loop_end':
+                return
 
 
 
