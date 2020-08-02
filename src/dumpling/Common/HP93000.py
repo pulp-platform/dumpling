@@ -29,7 +29,7 @@ class HP93000VectorReader:
             `VectorBuilder`
     """
 
-    matchers = {
+    _matchers = {
     'empty_line' : re.compile(r'^\s*$'),
     'format_stmt' : re.compile(r'FORMAT\s+(?P<ports>(\w+(?:\s+|;))+)'),
     'port_stmt' : re.compile(r'PORT\s+\w*\s*;'),
@@ -67,7 +67,7 @@ class HP93000VectorReader:
         for line in self._file:
             stm_type = None
             match = None
-            for stm_type, matcher in HP93000VectorReader.matchers.items():
+            for stm_type, matcher in HP93000VectorReader._matchers.items():
                 match = matcher.match(line)
                 if match:
                     break
