@@ -94,4 +94,4 @@ modify the *port name* referenced in the AVC file or change the name of the
 reference *wavetable*. If these arguements are chosend in accordance to the ASIC
 tester setup, the generated vectors can be imported as is as port burst vectors
 into your Pattern Master File using the *SmartTest GUI* (this is possible since
-*dumpling* besides the *.avc file also creates the *.tmf and *.wtb file).
+*dumpling* besides the \*.avc file also creates the \*.tmf and \*.wtb file).

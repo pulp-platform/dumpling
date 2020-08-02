@@ -67,7 +67,7 @@ Contents
    Architecture and Programming Model <architecture>
    Drivers <drivers>
    Generating Custom Vectors <custom_vectors>
-   Simulation
+   Vector Simulation <simulation>
    Extending Dumpling
    Authors <authors>
    Changelog <changelog>
