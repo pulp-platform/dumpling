@@ -47,7 +47,8 @@ class VectorBuilder:
     each pin (i.e. a pin value has to be assigned only if it changes between one vector and another). Each vector is
     represented int the form of a dictionary. There are three different types of vectors indicated by the 'type' entry:
 
-    - Normal Vectors::
+    - Normal Vectors:
+       ::
 
        {'type': 'vec', 'vector': <pin_state_map>, 'repeat':int, 'comment':str}
 
@@ -75,10 +76,12 @@ class VectorBuilder:
         A retry count of 1 causes the matched loop to be applied exactly once without any repetitions.
 
     - Loops:
-       A normal loop allows to repeat a whole sequence of vectors for a configurable amount of time::
+        A normal loop allows to repeat a whole sequence of vectors for a configurable amount of time::
+
            {'type': 'loop', 'loop_body': List[Vector], 'repeat': int}
-       Repeat indicates how often the loop is supposed to be applied with one causing the loop body to be applied
-       exactly once.
+
+        Repeat indicates how often the loop is supposed to be applied with one causing the loop body to be applied
+        exactly once.
 
     Args:
         pins: The pin declaration dictionary.

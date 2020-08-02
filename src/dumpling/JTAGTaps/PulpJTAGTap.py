@@ -12,7 +12,7 @@ bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 inst
 class PULPJtagTap(JTAGTap):
     """
     See Also:
-        Check teh adv_dbg documentation for details on the protocol used for this JTAGTap
+        Check the adv_dbg documentation for details on the protocol used for this JTAGTap
     """
     DBG_MODULE_ID = BitArray('0b100000')
 

@@ -58,12 +58,12 @@ def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
 @rosetta.command()
 @click.option("--blade/--no-blade", default=True, help="Enables/Disables the BLADE SRAM macros in Rosetta", show_default=True)
 @click.option("--edram/--no-edram", default=True, help="Enables/Disables the eDRAM macros in Rosetta", show_default=True)
-@click.option("--hd-mem-backend", type=click.Choice('edram', 'scm'), default='scm', show_default=True,
+@click.option("--hd-mem-backend", type=click.Choice(['edram', 'scm']), default='scm', show_default=True,
               help="Switches between SCM and eDRAM as the memory backend for the HD-Computing Accelerator")
 @click.option("--bypass-soc-fll", is_flag=True, default=True, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
 @click.option("--bypass-per-fll", is_flag=True, default=True, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
 @pass_VectorWriter
-def write_soc_config(vector_writer: HP93000VectorWriter, elf, return_code, wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
+def write_soc_config(vector_writer: HP93000VectorWriter, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
     """
     Writes the given static configuration value to the apb_soc_ctrl register.
 
