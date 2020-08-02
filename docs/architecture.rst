@@ -8,9 +8,9 @@ Architecture and Programming Model
 Generating Vectors using :py:class:`VectorBuilder <dumpling.Common.VectorBuilder.VectorBuilder>`
 ------------------------------------------
 
-Dumpling uses a very modular architecture based around the classes in the
-`Common` package. Most functions in *dumpling* revolve around vectors which
-internally are represented as simple dictionaries::
+Dumpling uses a very modular architecture based on the classes in the `Common`
+package. Most functions in *dumpling* revolve around vectors which internally
+are represented as simple dictionaries::
 
   vector = {'type': <type>, ...}
 
@@ -22,22 +22,26 @@ There are three different types of vectors indicated by the 'type' entry:
 - Normal Vectors:
    ::
 
-   {'type': 'vec', 'vector': <pin_state_map>, 'repeat':int, 'comment':str}
+      {'type': 'vec', 'vector': <pin_state_map>, 'repeat':int, 'comment':str}
 
    The <pin_state_map> is another dictionary which contains a mapping of each
    logical pin name supplied in the pin declaration to pin state character, e.g.
-   '0','1','X' etc. The actual state character used depends on the driver but
-   the three character just mentioned are the most commonly used ones (the state
-   character is explained in more detail in a subsequent :ref:`subsection
-   <state_character>`). The repeat value denotes how often the vector should be
-   repeated before the next one is supposed to be applied. A value of 1 denotes
-   that the vector should be applied exactly once. The comment string helps to
-   identify the purpose and context of the current vector. Most drivers
-   automatically anotate the generated vectors with reasonable default comments.
-   How the comments are used depends on the target, consuming the vectors. The
-   AVC vector writer (HP93000VectorWriter class) embeds the comment into the
-   vector string while the CocotbVectorDriver write the to the Log output during
-   simulation.
+   '0','1','X' etc.::
+
+     {'tck': '0', 'trst': '1', 'tdo': 'X', 'tdi': '0', 'tms': '1'}
+
+   The actual state character (value) used depends on the driver that generated
+   the vector but the three character just mentioned are the most commonly used
+   ones. The state character is explained in more detail in a following
+   :ref:`subsection <state_character>`. The repeat value denotes how often the
+   vector should be repeated before the next one is to be applied. A value of 1
+   denotes that the vector should be applied exactly once. The optional comment
+   string helps to identify the purpose and context of the current vector. Most
+   drivers automatically anotate the generated vectors with reasonable default
+   comments. How the comments are used depends on the target, consuming the
+   vectors. The AVC vector writer (HP93000VectorWriter class) embeds the comment
+   into the vector string while the CocotbVectorDriver writes them to the Log
+   output during simulation.
 
 - Matched Loops:
     Matched loops represent the corresponding sequencer capability of the ASIC tester, to apply a list of
@@ -57,27 +61,28 @@ There are three different types of vectors indicated by the 'type' entry:
 
        {'type': 'loop', 'loop_body': List[Vector], 'repeat': int}
 
-Repeat indicates how often the loop is supposed to be applied with one causing the loop body to be applied
-exactly once.
+Repeat indicates how often the loop is supposed to be applied with. A value of 1
+causes the loop body to be applied exactly once.
 
 The Pin Declaration
 """""""""""""""""""
 
-The :py:class:`VectorBuilder <dumpling.Common.VectorBuilder.VectorBuilder>` class is the working horse when it comes to generating
-these vectors. The class is instantiated with by providing a declaration of
-all the pins that should end up in the vectors created by this particular
-instance of :py:class:`VectorBuilder <dumpling.Common.VectorBuilder.VectorBuilder>`. Each pins is declared with a **logical
-name**, and a **physical name**. The **logical name** is used by protocol
-driver classes like ``JTAGDriver`` to rever to pins without knowing the
-actual **physical name** used in the design. This makes the drivers agnostic
-of the naming scheme used for a particular chip. An example of such a
-**logical name**, **phyiscal name** relation would be ``tck`` =
-``pad_pulp_jtag_tck_i``. Eeach of the more abstract driver classes (e.g. the
-``JTAGDriver``) internally uses the logical name while the VectorWriter
-class that generates the AVC file will later on map them to the actual
-signal name used in the design. Logical names should thus be used
-consistently and drivers must declare the names they will internally use in
-their documentation so the user knows what pin declaration to use.
+The :py:class:`VectorBuilder <dumpling.Common.VectorBuilder.VectorBuilder>`
+class is the working horse when it comes to generating vectors. The class is
+instantiated by providing a declaration of all the pins that should end up in
+the vectors created by this particular instance of :py:class:`VectorBuilder
+<dumpling.Common.VectorBuilder.VectorBuilder>`. Each pin is declared with a
+**logical name**, and a **physical name**. The **logical name** is used by
+protocol driver classes like ``JTAGDriver`` to refer to pins without knowing the
+actual **physical name** used in the design. This makes the drivers agnostic to
+the naming scheme used for a particular chip. An example of such a **logical
+name**, **phyiscal name** relation would be ``tck`` = ``pad_pulp_jtag_tck_i``.
+Eeach of the more abstract driver classes (e.g. the ``JTAGDriver``) internally
+uses the logical name while the VectorWriter class that generates the AVC file
+will later on map them to the actual signal name used in the design. Logical
+names should thus be used consistently and drivers must declare the names they
+internally use in their documentation so the user knows what pin declaration to
+provide to the VectorBuilder instance.
 
 The actual pin declaration is just a dictionary with **logical name** as the
 key and another dictionary as the value. Here is an example::
@@ -97,15 +102,17 @@ Each pin dictionary (the value mapped to the **logical name**) must contain the 
          value depends on the module under test.
 :"default": The default value that should be assigned to the pin if the
             driver doesn't assign a different value.
+:"type": The directionality of the signal with valid values: ``'input'``,
+         ``'outut'`` and ``'inout'``.
 
 
 .. _state_character:
 The State Character
 """""""""""""""""""
 
-A the the very core, a vector is nothing more than a mapping of a *state
+At the the very core, a vector is nothing more than a mapping of a *state
 character* (an ASCII character like '0', '1' or 'X') to a specific *pin* for a
-given instance of time (e.g. a single clock period). The state character is
+given period of time (e.g. a single clock period). The state character is
 translated to a waveform using the *wavetable* you definer in your ASIC tester
 setup e.g. a rising edge followed by a falling edge in the case of a clock
 signal or a sampling edge shortly before the next rising edge of the related
