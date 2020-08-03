@@ -65,6 +65,7 @@ Contents
    :maxdepth: 2
 
    Quickstart <quickstart>
+   Command Line Tool <cli>
    Architecture and Programming Model <architecture>
    Drivers <drivers>
    Generating Custom Vectors <custom_vectors>

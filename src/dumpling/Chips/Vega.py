@@ -304,4 +304,24 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
 @click.argument('signal', type=click.Choice([signal.name for signal in PULPJtagTapVega.OBSERVABLE_SIGNAL]))
 @pass_VectorWriter
 def enable_observability(vector_writer: HP93000VectorWriter, signal):
-    pass
+    """
+    Generate vectors to enable observability SIGNAL on the PWM3 pad.
+
+    This command enables the observability feature for a selection of important internal signals of the chip and routes them to the PWM3 pad.
+    Use the disable_observability command to generate vectors that restore the PWM3 pad's default mode of operation.
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.enable_observability(PULPJtagTapVega.OBSERVABLE_SIGNAL[signal])
+        writer.write_vectors(vectors)
+
+@vega.command()
+@pass_VectorWriter
+def disable_observability(vector_writer: HP93000VectorWriter):
+    """
+    Disable the internal signal observability feature.
+
+    This command generates vectors that restore the default operation mode of the PWM3 pad and disable the observability of internal signals.
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.disable_observability()
+        writer.write_vectors(vectors)
