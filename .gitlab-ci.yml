@@ -3,7 +3,7 @@ pages:
   - python3.6 -m venv venv
   - source venv/bin/activate
   - pip install --upgrade pip
-  - pip install ".[SIM]"
+  - pip install ".[DOC]"
   - make -C docs html
   - mv build/sphinx/html public
   artifacts:
