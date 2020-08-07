@@ -42,7 +42,7 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 #Entry point for all vega related commands
 @click.group()
 @click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
-@click.option("--wtb-name", '-w', type=str, default="multiport_ext_clk_wvtbl", show_default=True)
+@click.option("--wtb-name", '-w', type=str, default="multiport", show_default=True)
 @click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
@@ -63,7 +63,7 @@ def vega(ctx, port_name, wtb_name, device_cycle_name, output):
 @click.option("--no-reset", is_flag=True, default=False, show_default=True, help="Don't reset the chip before executing the binary. Helpfull for debugging and to keep custom config preloaded via "
                                                                                  "JTAG.")
 @pass_VectorWriter
-def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll, compress, no_reset):
+def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, compress, no_reset):
     """Generate vectors to load and execute the given elf binary.
 
     The command parses the binary supplied with the '--elf' parameter and
@@ -110,7 +110,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
         # Halt fabric controller
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.set_dmactive(True)
-        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=50)
+        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=100)
 
         vector_writer.write_vectors(vectors, compress=compress)
 
@@ -137,7 +137,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
-        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=50)
+        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=100)
         vector_writer.write_vectors(vectors, compress=compress)
 
         # Wait for end of computation by polling EOC register address
@@ -145,8 +145,8 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
             if eoc_wait_cycles <= 0:
                 vectors = riscv_debug_tap.wait_for_end_of_computation(return_code, idle_vector_count=100, max_retries=10)
             else:
-                vectors = [jtag_driver.jtag_idle_vector(repeat=1000, comment="Waiting for computation to finish before checking EOC register.")]
-                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=10)
+                vectors = [jtag_driver.jtag_idle_vector(repeat=eoc_wait_cycles, comment="Waiting for computation to finish before checking EOC register.")]
+                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=5000)
             vector_writer.write_vectors(vectors, compress=compress)
 
 
@@ -157,7 +157,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops  in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @pass_VectorWriter
-def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop):
+def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress):
     """
     Perform write transactions to the system bus.
 
@@ -336,4 +336,20 @@ def disable_observability(vector_writer: HP93000VectorWriter):
     """
     with vector_writer as writer:
         vectors = pulp_tap.disable_observability()
+        writer.write_vectors(vectors)
+
+@vega.command()
+@click.option('--qosc_bypass', is_flag=True, help="Bypass the crystall oscilator")
+@click.option('--ref_bypass', is_flag=True, help="Bypass the reference clock")
+@click.option('--per_fll_bypass', is_flag=True, help="Bypass peripheral fll")
+@click.option('--soc_fll_bypass', is_flag=True, help="Bypass SoC fll")
+@click.option('--cluster_fll_bypass', is_flag=True, help="Bypass Cluster fll")
+@pass_VectorWriter
+def set_clk_bypass(vector_writer: HP93000VectorWriter, qosc_bypass, ref_bypass, per_fll_bypass, soc_fll_bypass, cluster_fll_bypass):
+    """
+    Set the internal clock bypass register to bypass reference clock or FLL clock
+
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.set_clk_bypass_reg(qosc_byp=qosc_bypass, ref_clk_byp=ref_bypass, per_fll_byp=per_fll_bypass, soc_fll_byp=soc_fll_bypass, cluster_fll_byp=cluster_fll_bypass)
         writer.write_vectors(vectors)
