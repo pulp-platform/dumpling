@@ -9,8 +9,7 @@ Installation of dumpling is straight forward: Clone the repository and install t
 
 .. code-block:: bash
 
-   git clone https://iis-git.ee.ethz.ch/utilities/dumpling
-   pip install ./dumpling
+   pip install git+https://iis-git.ee.ethz.ch/utilities/dumpling
 
 If you plan to modify dumpling you might want to install it with the `pip`
 editable flag so changes to the source code of dumpling take effect
@@ -18,6 +17,7 @@ immediately to all Python environments were you installed *dumpling*
 
 .. code-block:: bash
 
+   git clone https://iis-git.ee.ethz.ch/utilities/dumpling
    pip install -e ./dumpling
 
 This installation scheme will automatically install all the required
@@ -30,7 +30,7 @@ install dumpling with the following extra flag:
 
 .. code-block:: bash
 
-   pip install "./dumpling[SIM]"
+   pip install git+https://iis-git.ee.ethz.ch/utilities/dumpling[SIM]
 
 This will install dumpling with all the necessary dependencies for AVC vector
 simulation using CocoTB.
