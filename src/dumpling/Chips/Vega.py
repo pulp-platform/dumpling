@@ -1,3 +1,4 @@
+import math
 import re
 from pathlib import Path
 
@@ -252,8 +253,9 @@ def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
     """
     Generate vectors to resume the core.
 
-    The vectors will instruct the RISC-V debug module via JTAG to resume the core and after a configurable number of JTAG clock cycles will verify that the core is in the 'running' state.
-    """
+    The vectors will instruct the RISC-V debug module via JTAG to resume the core and after a configurable number of
+    JTAG clock cycles will verify that the core is in the 'running' state. """
+
     with vector_writer as writer:
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles)
@@ -288,17 +290,18 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
 def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_reset, wait_cycles):
     """Halt the core, optionally reading the program counter and resuming the core.
 
-    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt the core,
-    optionally read the programm counter and optionally resume the core.
+    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt
+    the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
     dumpling vega -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 
-    The --assert-reset flag allows to keep the reset line asserted during the exeuction of core halt procedure. This allows to halt the core before it statrts to execute
-    random data right after reset.
+    The --assert-reset flag allows to keep the reset line asserted during the exeuction of core halt procedure. This
+    allows to halt the core before it statrts to execute random data right after reset.
     """
+
     with vector_writer as writer:
         if assert_reset:
             vector_builder.chip_reset = 0
@@ -319,11 +322,13 @@ def enable_observability(vector_writer: HP93000VectorWriter, signal):
     """
     Generate vectors to enable observability SIGNAL on the PWM3 pad.
 
-    This command enables the observability feature for a selection of important internal signals of the chip and routes them to the PWM3 pad.
-    Use the disable_observability command to generate vectors that restore the PWM3 pad's default mode of operation.
-    """
+    This command enables the observability feature for a selection of important internal signals of the chip and routes
+    them to the PWM3 pad. Use the disable_observability command to generate vectors that restore the PWM3 pad's default
+    mode of operation. """
+
     with vector_writer as writer:
-        vectors = pulp_tap.enable_observability(PULPJtagTapVega.OBSERVABLE_SIGNAL[signal])
+        vectors = pulp_tap.init_pulp_tap()
+        vectors += pulp_tap.enable_observability(PULPJtagTapVega.OBSERVABLE_SIGNAL[signal])
         writer.write_vectors(vectors)
 
 @vega.command()
@@ -335,7 +340,8 @@ def disable_observability(vector_writer: HP93000VectorWriter):
     This command generates vectors that restore the default operation mode of the PWM3 pad and disable the observability of internal signals.
     """
     with vector_writer as writer:
-        vectors = pulp_tap.disable_observability()
+        vectors = pulp_tap.init_pulp_tap()
+        vectors += pulp_tap.disable_observability()
         writer.write_vectors(vectors)
 
 @vega.command()
@@ -351,5 +357,44 @@ def set_clk_bypass(vector_writer: HP93000VectorWriter, qosc_bypass, ref_bypass, 
 
     """
     with vector_writer as writer:
-        vectors = pulp_tap.set_clk_bypass_reg(qosc_byp=qosc_bypass, ref_clk_byp=ref_bypass, per_fll_byp=per_fll_bypass, soc_fll_byp=soc_fll_bypass, cluster_fll_byp=cluster_fll_bypass)
+        vectors = pulp_tap.init_pulp_tap()
+        vectors += pulp_tap.set_clk_bypass_reg(qosc_byp=qosc_bypass, ref_clk_byp=ref_bypass, per_fll_byp=per_fll_bypass, soc_fll_byp=soc_fll_bypass, cluster_fll_byp=cluster_fll_bypass)
+        writer.write_vectors(vectors)
+
+
+@vega.command()
+@click.argument("FLL", type=click.Choice(['FLL1', 'FLL2', 'FLL3']))
+@click.argument("MULT", type=click.IntRange(min=1, max=65535))
+@click.option("--clk-div", default=4, type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
+@click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the FLL lock signal")
+@click.option("--tolerance", default=512, show_default=True, type=click.IntRange(min=0, max=2047), help="The margin around the target multiplication factor for clock to be considered stable.")
+@click.option("--stable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of stable cycles unil LOCK is asserted.")
+@click.option("--unstable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of unstable cycles unil LOCK is de-asserted.")
+@click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
+@click.option("--loop-gain-exponent", default=-7, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
+@pass_VectorWriter
+def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain, enable_dithering):
+    """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
+
+        The FLL argument determines which of the three independent FLLs in Vega is configured. Which clock (soc_clk,
+        per_clk and cluster_clk) is derived from which FLL depends on the clock selection settings in the
+        APB_SOC_CONTROL module. By default, vega starts up using FLL1 for both, peripheral- (with some clk divider)
+        and soc-clock and FLL2 for the cluster clock.
+
+        The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>
+
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.init_pulp_tap()
+        if fll == "FLL1":
+            config1_address = BitArray('0x1a100004')
+        elif fll == "FLL2":
+            config1_address = BitArray('0x1a100014')
+        else:
+            config1_address = BitArray('0x1a100024')
+        clk_div_value = int(math.log2(int(clk_div)))+1
+        config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=136, uint:16', lock, clk_div_value, mult)
+        config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, loop_gain)
+
+        vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value, config2_value], comment="Configure {}".format(fll))
         writer.write_vectors(vectors)
