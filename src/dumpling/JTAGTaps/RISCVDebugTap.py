@@ -237,8 +237,8 @@ class RISCVDebugTap(JTAGTap):
         # Generate vectors to start read operation from register
         vectors = self.set_dmi(DMIOp.READ, dmi_addr, 32 * '0', comment=comment)
         self.driver.set_jtag_default_values()
-        self.driver.vector_writer.tck = 1
-        vectors += [self.driver.vector_writer.vector(repeat=10, comment="Clock tck for a few cycles to let dmi complete operation")]
+        self.driver.vector_builder.tck = 1
+        vectors += [self.driver.vector_builder.vector(repeat=10, comment="Clock tck for a few cycles to let dmi complete operation")]
         # Don't use a matched loop but wait for a couple of jtag cycles before trying to read the DMIACCESS register
         vectors += [self.driver.jtag_idle_vector(repeat=wait_cycles, comment="Waiting for completion of DMI read OP.")]
         vectors += self.set_dmi(DMIOp.NOP, DMRegAddress.NO_REG, 32 * '0', DMIResult.OP_SUCCESS, expected_data)
@@ -260,7 +260,7 @@ class RISCVDebugTap(JTAGTap):
         idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
 
         # Create vectors for a matched loop that repeatedly polls the status register and resets the error bit on mismatch
-        vectors += self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries)
+        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
@@ -273,8 +273,8 @@ class RISCVDebugTap(JTAGTap):
         vectors = self.set_dmi(DMIOp.WRITE, dmi_addr, data, comment=comment)
         # Generate a few jtag clock edges while staying in idle state
         self.driver.set_jtag_default_values()
-        self.driver.vector_writer.tck = 1
-        vectors += [self.driver.vector_writer.vector(repeat=5, comment="Clock tck for a few cycles to let dmi complete operation")]
+        self.driver.vector_builder.tck = 1
+        vectors += [self.driver.vector_builder.vector(repeat=5, comment="Clock tck for a few cycles to let dmi complete operation")]
         if verify_completion:
             # Check the status of the previous operation by reading the OP field of JTAG DMI Access register
             condition_vectors = self.set_dmi(DMIOp.NOP, DMRegAddress.NO_REG, 32 * '0', DMIResult.OP_SUCCESS)
@@ -286,7 +286,7 @@ class RISCVDebugTap(JTAGTap):
             idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
 
             # Create vectors for a matched loop that repeatedly polls the status register and resets the error bit on mismatch
-            vectors += self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries)
+            vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
             vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
@@ -463,18 +463,23 @@ class RISCVDebugTap(JTAGTap):
     def readMem_no_loop(self, addr: BitArray, expected_data: BitArray, wait_cycles, comment=""):
         comment += "/Reading from systembus @0x{} expecting 0x".format(addr.hex, expected_data.hex)
         vectors = self.write_debug_reg(DMRegAddress.SBADDRESS0, addr.bin, verify_completion=False, comment=comment)
+        vectors += [self.driver.jtag_idle_vector(repeat=wait_cycles, comment="Wait for a few cylces to let the bus transaction complete")]
         vectors += self.read_debug_reg_no_loop(DMRegAddress.SBDATA0, expected_data.bin, wait_cycles=wait_cycles)
         return vectors
 
-    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
+
+    def enable_sbreadonaddr(self):
         # Enable sbreadonaddr by writing appropriate values to SBCS register
         sbcs_value = BitArray(32)
         sbcs_value[29:32] = 1
         sbcs_value[20] = 1
         sbcs_value[17:20] = 2
+        return self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment="Enable sbreadonaddr flag in SBCS reg for "
+                                                                                                                                                    "subsequent reads.")
 
-        vectors = self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment="Enable sbreadonaddr flag in SBCS reg for "
-                                                                                                                                "subsequent reads.")
+
+    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
+        vectors = self.enable_sbreadonaddr()
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
@@ -482,15 +487,9 @@ class RISCVDebugTap(JTAGTap):
             expected_return_code))
         return vectors
 
-    def wait_for_end_of_computation(self, expected_return_code: int, idle_vector_count=10, max_retries=10, eoc_reg_addr = '0x1a1040a0'):
-        # Enable sbreadonaddr by writing appropriate values to SBCS register
-        sbcs_value = BitArray(32)
-        sbcs_value[29:32] = 1
-        sbcs_value[20] = 1
-        sbcs_value[17:20] = 2
 
-        vectors = self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=True, retries=max_retries, comment="Enable sbreadonaddr flag in SBCS reg for "
-                                                                                                                                                    "subsequent reads.")
+    def wait_for_end_of_computation(self, expected_return_code: int, idle_vector_count=10, max_retries=10, eoc_reg_addr = '0x1a1040a0'):
+        vectors = self.enable_sbreadonaddr()
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
@@ -501,6 +500,6 @@ class RISCVDebugTap(JTAGTap):
 
         idle_vectors = self.driver.jtag_idle_vectors(count=idle_vector_count)
         idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
-        vectors += self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, max_retries)
+        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, max_retries)
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
