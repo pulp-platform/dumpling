@@ -48,7 +48,6 @@ A sample Makefiles for simple RTL projects
    TOPLEVEL_LANG=verilog
    SIM=questa
    SIM_ARGS= -suppress vsim-3009
-   
 
    #Source File Specification
    VERILOG_SOURCES = ../../rtl/fancy_module.sv \
@@ -109,7 +108,7 @@ files:
 
    #Testbench Module
    MODULE=my_cocotb_testbenches # The python module (*.py file) that
-                                # contains the various testbenches
+	 # contains the various testbenches
 
    #This is the magic line that includes CocoTBs make targets
    #It obviously requires CocoTB to be installed
@@ -122,9 +121,9 @@ files:
 
    #A custom target that maps all pre-compiled libs to the working directory
    vmap_libs:
-     @for lib in $(shell find ${PLATFORM_INSTALL}/* -maxdepth 0 -type d -printf "%f "); do vmap $${lib} ${PLATFORM_INSTALL}/$${lib}; done
-   
-.. note::
+   	@for lib in $(shell find ${PLATFORM_INSTALL}/* -maxdepth 0 -type d -printf "%f "); do vmap $${lib} ${PLATFORM_INSTALL}/$${lib}; done
+
+   .. note::
 
    We only specified the SystemVerilog source for the toplevel module. All other
    submodules are defined in the libraries which are automatically mapped by the
@@ -149,6 +148,7 @@ applies each vector of an AVC file to the DUT::
   from cocotb.triggers import Timer, FallingEdge
   from cocotb.result import TestFailure
   from cocotb.clock import Clock
+  from pathlib import Path
   from dumpling.Common.Simulation import CocotbVectorDriver
 
   @cocotb.test()
@@ -156,9 +156,9 @@ applies each vector of an AVC file to the DUT::
     T_JTAG_PS = int(100e3)
     T_APPL_DELAY = T_JTAG_PS * 0.5  # apply with falling edge T/2
     T_ACQ_DELAY = T_JTAG_PS * 0.05  # sample T*0.05 before rising edge
-    clock_wavefun = CocotbDriver.simple_clock_gen_wavefun(T_JTAG_PS, start_high=True, idle_low=True)
-    apl_wavefun = CocotbDriver.simple_stimuli_appl_wavefun(appl_delay_ps=T_APPL_DELAY, wave_period_ps=T_JTAG_PS)
-    acq_wavefun = CocotbDriver.simple_response_acq_wavefun(acq_delay_ps=T_ACQ_DELAY, wave_period_ps=T_JTAG_PS)
+    clock_wavefun = CocotbVectorDriver.simple_clock_gen_wavefun(T_JTAG_PS, start_high=True, idle_low=True)
+    apl_wavefun = CocotbVectorDriver.simple_stimuli_appl_wavefun(appl_delay_ps=T_APPL_DELAY, wave_period_ps=T_JTAG_PS)
+    acq_wavefun = CocotbVectorDriver.simple_response_acq_wavefun(acq_delay_ps=T_ACQ_DELAY, wave_period_ps=T_JTAG_PS)
     pins = {
         'chip_reset': {'name': 'pad_reset_n', 'default': '0', 'wavefun': apl_wavefun},
         'trst': {'name': 'pad_jtag_trst', 'default': '1', 'wavefun': apl_wavefun},
