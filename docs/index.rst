@@ -32,6 +32,13 @@ method:
   file reporting mismatches, we will have a very hard time figuring out what
   actually causes the discrepancy.
 
+.. figure:: illustrations/dumpling_lib_overview.png
+   :width: 500
+   :alt: Dumpling Architecture Overview
+   :align: center
+
+   Architectural Overview of Dumpling
+
 Dumpling is different from the VCD dump approach. Instead of performing RTL
 simulation to generate the vectors it bitbangs the actual protocol in a modular
 manner. The generated vectors are extensively annotated with comments that
