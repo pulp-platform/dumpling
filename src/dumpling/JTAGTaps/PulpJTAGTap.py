@@ -87,7 +87,7 @@ class PULPJtagTap(JTAGTap):
         burst = burst[::-1] #set_dr is LSB first so we have to reverse the order
         return self.driver.jtag_set_dr(self, burst, comment=comment)
 
-    def read_burst_no_loop(self, expected_data:List[BitArray], comment=""):
+    def read_burst_no_loop(self, expected_data:List[BitArray], wait_cycles=3, comment=""):
         comment += "/Read burst data for {} words".format(len(expected_data))
 
         vectors = self.driver.jtag_goto_shift_dr(comment)
@@ -103,8 +103,9 @@ class PULPJtagTap(JTAGTap):
             burst += word.bin[::-1]  # Actual Data to read LSB first
         burst += 32 * 'X'  # Ignore the CRC
         # Shift DR until we see a status=1 bit
-        # In this matched_loop-free version of read_burst we assume the status bit to raise with the third jtag shift
-        vectors += self.driver.jtag_shift('0000', '0001', comment="Shift until status bit is 1", noexit=True)
+        # In this matched_loop-free version of read_burst we expect the user to tell us how many cycles the pulp_tap needs for the read ready bit to be raised (wait_cycles argument)
+        wait_status_bits = '0' * wait_cycles + '1'
+        vectors += self.driver.jtag_shift('0' * (wait_cycles + 1), wait_status_bits, comment="Shift until status bit is 1", noexit=True)
         # Now we shift the actual data
         vectors += self.driver.jtag_shift(len(burst) * '0',
                                           expected_chain=burst)  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
@@ -132,7 +133,7 @@ class PULPJtagTap(JTAGTap):
         #Pad to multiple of 8 vectors
         condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
         idle_vectors = self.driver.jtag_idle_vectors(8)
-        vectors += self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries)
+        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
 
 
@@ -259,6 +260,6 @@ class PULPJtagTap(JTAGTap):
     #     condition_vectors += self.driver.jtag_idle_vectors(count=8 - len(condition_vectors) % 8)
     #     idle_vectors = self.driver.jtag_idle_vectors(count=idle_cycles)
     #     idle_vectors += self.driver.jtag_idle_vectors(count=8 - len(idle_vectors) % 8)
-    #     vectors = self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries=retries)
+    #     vectors = self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries=retries)
     #     return vectors
 

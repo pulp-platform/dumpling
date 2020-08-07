@@ -12,9 +12,10 @@ bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 inst
 class PULPJtagTapVega(JTAGTap):
     """
     See Also:
-        Check teh adv_dbg documentation for details on the protocol used for this JTAGTap
+        Check the adv_dbg documentation for details on the protocol used for this JTAGTap
     """
-    DBG_MODULE_ID = BitArray('0x10102001')
+    DBG_MODULE_ID = BitArray('0b100000')
+    #DBG_MODULE_ID = BitArray('0x10102001')
 
     class OBSERVABLE_SIGNAL(Enum):
         pmu_soc_trc_clk_o = 0
@@ -78,7 +79,7 @@ class PULPJtagTapVega(JTAGTap):
     def set_clk_bypass_reg(self, qosc_byp:bool=False, ref_clk_byp:bool=False, per_fll_byp:bool=False, soc_fll_byp:bool=True, cluster_fll_byp:bool=True):
         enabled_bypasses = [name for name, enabled in zip(['qosc', 'ref_clk', 'per_fll', 'soc_fll', 'cluster_fll'], [qosc_byp, ref_clk_byp, per_fll_byp, soc_fll_byp, cluster_fll_byp]) if enabled]
         comment = "Bypassing {}".format(', '.join(enabled_bypasses))
-        id_value = bitstring.pack('pad:22 bool, bool, bool, bool, bool',cluster_fll_byp, soc_fll_byp, per_fll_byp, ref_clk_byp, qosc_byp)
+        id_value = bitstring.pack('bool, bool, bool, bool, bool',cluster_fll_byp, soc_fll_byp, per_fll_byp, ref_clk_byp, qosc_byp)
         return self.driver.write_reg(self, self.reg_soc_clk_byp_reg, id_value.bin, comment=comment)
 
     def disable_observability(self):
@@ -105,15 +106,15 @@ class PULPJtagTapVega(JTAGTap):
             List: The vectors corresponding to the operation
         """
         comment = "Enable observability of {}".format(signal.name)
-        dr_value = bitstring.pack('uint:5, uint:2, bool, bool, 0b1', signal.value, drv_strength, pullup_enable, pulldown_enable)
-        return self.driver.write_reg(self, self.reg_soc_observ, dr_value, comment=comment)
+        dr_value = bitstring.pack('pad:22, uint:5, uint:2, bool, bool, 0b1', signal.value, drv_strength, pullup_enable, pulldown_enable)
+        return self.driver.write_reg(self, self.reg_soc_observ, dr_value.bin, comment=comment)
 
 
     def init_pulp_tap(self):
         return self.driver.jtag_set_ir(self, self.reg_soc_axireg.IR_value, comment="Init Pulp Tap")
 
     def module_select(self, comment=""):
-        return self.driver.jtag_set_dr(self, PULPJtagTap.DBG_MODULE_ID.bin, comment=comment)
+        return self.driver.jtag_set_dr(self, PULPJtagTapVega.DBG_MODULE_ID.bin, comment=comment)
 
     def setup_burst(self, cmd: DBG_OP, start_addr:BitArray, nwords:int, comment=""):
         comment += "/Setup AXI4 adv dbg burst @{} for {} words".format(start_addr, nwords)
@@ -133,7 +134,7 @@ class PULPJtagTapVega(JTAGTap):
         burst = burst[::-1] #set_dr is LSB first so we have to reverse the order
         return self.driver.jtag_set_dr(self, burst, comment=comment)
 
-    def read_burst_no_loop(self, expected_data:List[BitArray], comment=""):
+    def read_burst_no_loop(self, expected_data:List[BitArray], wait_cycles=1, comment=""):
         comment += "/Read burst data for {} words".format(len(expected_data))
 
         vectors = self.driver.jtag_goto_shift_dr(comment)
@@ -149,8 +150,9 @@ class PULPJtagTapVega(JTAGTap):
             burst += word.bin[::-1]  # Actual Data to read LSB first
         burst += 32 * 'X'  # Ignore the CRC
         # Shift DR until we see a status=1 bit
-        # In this matched_loop-free version of read_burst we assume the status bit to raise with the third jtag shift
-        vectors += self.driver.jtag_shift('0000', '0001', comment="Shift until status bit is 1", noexit=True)
+        # In this matched_loop-free version of read_burst we expect the user to tell us how many cycles the pulp_tap needs for the read ready bit to be raised (wait_cycles argument)
+        wait_status_bits = '0'*wait_cycles+'1'
+        vectors += self.driver.jtag_shift('0'*(wait_cycles+1), wait_status_bits, comment="Shift until status bit is 1", noexit=True)
         # Now we shift the actual data
         vectors += self.driver.jtag_shift(len(burst) * '0',
                                           expected_chain=burst)  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
@@ -178,7 +180,7 @@ class PULPJtagTapVega(JTAGTap):
         #Pad to multiple of 8 vectors
         condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
         idle_vectors = self.driver.jtag_idle_vectors(8)
-        vectors += self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries)
+        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
 
 
@@ -192,7 +194,7 @@ class PULPJtagTapVega(JTAGTap):
         #Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         #Setup Burst (p.17 of ADV DBG Doc)
-        vectors += self.setup_burst(PULPJtagTap.DBG_OP.WRITE32, start_addr, nwords, comment=comment)
+        vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.WRITE32, start_addr, nwords, comment=comment)
         #Burst the data
         vectors += self.write_burst(data)
         return vectors
@@ -203,7 +205,7 @@ class PULPJtagTapVega(JTAGTap):
         #Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         #Setup Burst (p.17 of ADV DBG Doc)
-        vectors += self.setup_burst(PULPJtagTap.DBG_OP.READ32, start_addr, nwords, comment=comment)
+        vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords, comment=comment)
         #Burst the data
         vectors += self.read_burst(expected_data, retries=retries)
         return vectors
@@ -212,9 +214,9 @@ class PULPJtagTapVega(JTAGTap):
         nwords = len(expected_data)
         comment += "/Read32 burst @{} for {} bytes".format(start_addr, nwords)
         #Module Selet Command (p.15 of ADV DBG Doc)
-        vectors = self.module_select()
+        vectors = self.module_select(comment=comment)
         #Setup Burst (p.17 of ADV DBG Doc)
-        vectors += self.setup_burst(PULPJtagTap.DBG_OP.READ32, start_addr, nwords, comment=comment)
+        vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords)
         #Burst the data
         vectors += self.read_burst_no_loop(expected_data)
         return vectors
@@ -305,6 +307,6 @@ class PULPJtagTapVega(JTAGTap):
     #     condition_vectors += self.driver.jtag_idle_vectors(count=8 - len(condition_vectors) % 8)
     #     idle_vectors = self.driver.jtag_idle_vectors(count=idle_cycles)
     #     idle_vectors += self.driver.jtag_idle_vectors(count=8 - len(idle_vectors) % 8)
-    #     vectors = self.driver.vector_writer.matched_loop(condition_vectors, idle_vectors, retries=retries)
+    #     vectors = self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries=retries)
     #     return vectors
 

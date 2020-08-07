@@ -171,7 +171,7 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
     """
     #Parse all address value mappings and store the result in a list of tuples
     data = []
-    pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-f]{0,8})(?:#(?P<comment>.*))?")
+    pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-fA-F]{0,8})(?:#(?P<comment>.*))?")
 
     #Use stdin if the user did not provide any arguments
     if not address_value_mappings:
@@ -187,22 +187,24 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
         vectors = pulp_tap.init_pulp_tap()
         for address, value, comment in data:
             vectors += pulp_tap.write32(start_addr=address, data=[value], comment=comment if comment else "")
-            writer.write_vectors(vectors, compress=True)
+            writer.write_vectors(vectors, compress=compress)
         if verify:
             for address, value, comment in data:
                 if loop:
                     vectors = pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
                 else:
                     vectors = pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
-                writer.write_vectors(vectors, vectors)
+                writer.write_vectors(vectors, compress=compress)
 
 
 @vega.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
+@click.option("--use-pulp-tap", is_flag=True, default=False, show_default=True, help="Use the PULP TAP for readout instead of the RISC-V Debug module.")
+@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
 @pass_VectorWriter
-def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool):
+def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, use_pulp_tap: bool, wait_cycles: int):
     """
     Perform read transactions on the system bus and compare the values with expected ones
 
@@ -210,12 +212,12 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
     address and value are 32-bit value in hex notation and comment is an optional comment to attach to the vectors.
     E.g.::
 
-    write_mem "0x1c008080=0xdeafbeef#Write to start address" 0x1c008084=0x12345678
+    write_mem "0x1c008080=0xdeadbeef#Write to start address" 0x1c008084=0x12345678
 
     """
     #Parse all address value mappings and store the result in a list of tuples
     data = []
-    pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-f]{0,8})(?:#(?P<comment>.*))?")
+    pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-fA-F]{0,8})(?:#(?P<comment>.*))?")
     for mapping in address_value_mappings:
         match = pattern.match(mapping)
         if not match:
@@ -225,13 +227,23 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
 
     with vector_writer as writer:
         vector_builder.init()
-        vectors = pulp_tap.init_pulp_tap()
+        if use_pulp_tap:
+            vectors = pulp_tap.init_pulp_tap()
+        else:
+            vectors = riscv_debug_tap.init_dmi()
+            vectors += riscv_debug_tap.enable_sbreadonaddr()
         for address, value, comment in data:
             if loop:
-                vectors += pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
+                if use_pulp_tap:
+                    vectors += pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
+                else:
+                    vectors += riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
             else:
-                vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
-            writer.write_vectors(vectors, vectors, compress=compress)
+                if use_pulp_tap:
+                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
+                else:
+                    vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
+            writer.write_vectors(vectors, compress=compress)
 
 @vega.command()
 @click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
