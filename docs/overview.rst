@@ -3,17 +3,16 @@ Dumpling
 ===========
 
 **Dumpling** is a tool to generate and simulate vectors for the HP93000 ASIC
-tester. It is both a library for vector generation and JTAG bitbanging in
+tester. It is both, a library for vector generation and JTAG bitbanging in
 general as well as a command line tool to generate vectors for a set of
-supported PULP chips. The original goal of dumpling was to stream line the
+supported PULP chips. The original goal of dumpling was to streamline the
 procedure to generate ASCI Vector files for the HP93000 tester (AVC files).
 Before dumplings emergence, vectors that would boot a given ELF binary or
-configure the DUT using specifig JTAG taps would have to be created by
-recording vector dumps from an RTL simulation or handcrafting of the vectors.
-While one could argue that vectors recorded from RTL simulation are the better
-approach since they stem from the actual functional model of the device under
-test, there are a number of significant downfalls of the traditional VCD dump
-method:
+configure the DUT using specifig JTAG taps would have to be created by recording
+vector dumps from an RTL simulation or handcrafting of the vectors. While one
+could argue that vectors recorded from RTL simulation are the better approach
+since they stem from the actual functional model of the device under test, there
+are a number of significant downfalls of the traditional VCD dump method:
 
 - The output signals are always recorded. Most of the time (especially during
   reset) we do not care about the actual value of the output signals. We only
@@ -26,11 +25,10 @@ method:
   the outputs and when it's just garbage to ignore, it is hard to interpret the
   mismatches reported by the ASIC tester.
 
-- The recorded vectors contain zero context about what they actually do. This
-  is especially important during debugging when there are mismatches. If we do
-  not know the role/meaning of a single vector in a 10'000 vectors long AVC
-  file reporting mismatches, we will have a very hard time figuring out what
-  actually causes the discrepancy.
+- The recorded vectors contain zero context about what they actually do. This is
+  especially important during debugging when there are mismatches. If we do not
+  know the role/meaning of a single vector in a 10'000 vectors long AVC file, we
+  will have a very hard time figuring out what actually causes the mismatch.
 
 .. figure:: illustrations/dumpling_lib_overview.png
    :width: 500

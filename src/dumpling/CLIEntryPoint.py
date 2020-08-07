@@ -21,7 +21,9 @@ def cli():
 @click.argument('shell', required=False, type=click_completion.DocumentedChoice(click_completion.core.shells))
 @click.argument('path', required=False)
 def install_completions(append, case_insensitive, shell, path):
-    """Install the click-completion-command completion"""
+    """Install the command line tool's bash completion for your shell
+
+    If you don't provide any additional arguments this command tries to detect your current shell in use and appends the relevant settings to your .bashrc, .zshrc etc."""
     extra_env = {'_CLICK_COMPLETION_COMMAND_CASE_INSENSITIVE_COMPLETE': 'ON'} if case_insensitive else {}
     shell, path = click_completion.core.install(shell=shell, path=path, append=append, extra_env=extra_env)
     click.echo('%s completion installed in %s' % (shell, path))

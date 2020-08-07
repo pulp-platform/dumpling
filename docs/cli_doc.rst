@@ -2,7 +2,7 @@
 Command Line Tool
 =================
 
-This chapter contains the auto-generated full documentation of the command line
+This chapter contains the auto-generated documentation of the command line
 interface for dumpling. The information you find here is a identical to the info
 found in the CLI command help pages.
 
