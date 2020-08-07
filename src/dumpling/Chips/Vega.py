@@ -365,7 +365,7 @@ def set_clk_bypass(vector_writer: HP93000VectorWriter, qosc_bypass, ref_bypass, 
 @vega.command()
 @click.argument("FLL", type=click.Choice(['FLL1', 'FLL2', 'FLL3']))
 @click.argument("MULT", type=click.IntRange(min=1, max=65535))
-@click.option("--clk-div", default=4, type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
+@click.option("--clk-div", default='4', type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
 @click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the FLL lock signal")
 @click.option("--tolerance", default=512, show_default=True, type=click.IntRange(min=0, max=2047), help="The margin around the target multiplication factor for clock to be considered stable.")
 @click.option("--stable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of stable cycles unil LOCK is asserted.")
@@ -373,7 +373,7 @@ def set_clk_bypass(vector_writer: HP93000VectorWriter, qosc_bypass, ref_bypass, 
 @click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
 @click.option("--loop-gain-exponent", default=-7, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
 @pass_VectorWriter
-def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain, enable_dithering):
+def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering):
     """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
 
         The FLL argument determines which of the three independent FLLs in Vega is configured. Which clock (soc_clk,
@@ -394,7 +394,7 @@ def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, to
             config1_address = BitArray('0x1a100024')
         clk_div_value = int(math.log2(int(clk_div)))+1
         config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=136, uint:16', lock, clk_div_value, mult)
-        config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, loop_gain)
+        config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint:6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, -loop_gain_exponent)
 
         vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value, config2_value], comment="Configure {}".format(fll))
         writer.write_vectors(vectors)
