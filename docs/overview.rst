@@ -31,7 +31,7 @@ are a number of significant downfalls of the traditional VCD dump method:
   will have a very hard time figuring out what actually causes the mismatch.
 
 .. figure:: illustrations/dumpling_lib_overview.png
-   :width: 500
+   :width: 800
    :alt: Dumpling Architecture Overview
    :align: center
 
