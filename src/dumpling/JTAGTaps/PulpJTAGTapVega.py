@@ -210,7 +210,7 @@ class PULPJtagTapVega(JTAGTap):
         vectors += self.read_burst(expected_data, retries=retries)
         return vectors
 
-    def read32_no_loop(self, start_addr:BitArray, expected_data:List[BitArray], comment=""):
+    def read32_no_loop(self, start_addr:BitArray, expected_data:List[BitArray], wait_cycles=1, comment=""):
         nwords = len(expected_data)
         comment += "/Read32 burst @{} for {} bytes".format(start_addr, nwords)
         #Module Selet Command (p.15 of ADV DBG Doc)
@@ -218,7 +218,7 @@ class PULPJtagTapVega(JTAGTap):
         #Setup Burst (p.17 of ADV DBG Doc)
         vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords)
         #Burst the data
-        vectors += self.read_burst_no_loop(expected_data)
+        vectors += self.read_burst_no_loop(expected_data, wait_cycles=wait_cycles)
         return vectors
 
     def loadL2(self, elf_binary:str, comment=""):

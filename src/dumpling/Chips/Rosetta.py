@@ -230,7 +230,7 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @click.option("--use-pulp-tap", is_flag=True, default=False, show_default=True, help="Use the PULP TAP for readout instead of the RISC-V Debug module.")
-@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
+@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete.")
 @pass_VectorWriter
 def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, use_pulp_tap: bool, wait_cycles: int):
     """
@@ -268,7 +268,7 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
                     vectors += riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
             else:
                 if use_pulp_tap:
-                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
+                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], wait_cycles=wait_cycles, comment=comment if comment else "")
                 else:
                     vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
             writer.write_vectors(vectors, compress=compress)

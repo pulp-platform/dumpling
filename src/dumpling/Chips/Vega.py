@@ -241,7 +241,7 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
                     vectors += riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
             else:
                 if use_pulp_tap:
-                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
+                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], wait_cycles=wait_cycles, comment=comment if comment else "")
                 else:
                     vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
             writer.write_vectors(vectors, compress=compress)
