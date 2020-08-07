@@ -398,3 +398,20 @@ def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, to
 
         vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value, config2_value], comment="Configure {}".format(fll))
         writer.write_vectors(vectors)
+
+
+@vega.command()
+@click.option("--return-code", default=0, type=click.IntRange(min=0, max=255), show_default=True, help="The expected return code.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
+@pass_VectorWriter
+def check_eoc(vector_writer, return_code, wait_cycles):
+    """ Generate vectors to check for the end of computation.
+
+    Programs compiled with the pulp-sdk or pulp-runtime write their exit code to a special end-of-computation register
+    in APB SOC Control when they leave main. The expected return code (by default 0) can be modified to assume any value
+    between 0 and 255. """
+
+    with vector_writer as writer:
+        vectors = riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=wait_cycles)
+        writer.write_vectors(vectors)
