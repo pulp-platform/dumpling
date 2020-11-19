@@ -101,12 +101,6 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
         vectors += [vector_builder.vector(comment="Release hard reset")]
         vector_writer.write_vectors(vectors, compress=compress)
 
-        # Try writing to L2 memory with PULP Tap
-        vectors = pulp_tap.init_pulp_tap()
-        vectors += pulp_tap.write32(BitArray('0x1c008080'), [BitArray('0xabbaabba')], comment="Write testpattern 0xABBAABBA to L2 start")
-        vectors += pulp_tap.read32_no_loop(BitArray('0x1c008080'), [BitArray('0xabbaabba')], comment="Verify testpattern. Expecting to read 0xABBAABBA")
-        vector_writer.write_vectors(vectors, compress=compress)
-
         # Start boot procedure
         # Halt fabric controller
         vectors = riscv_debug_tap.init_dmi()
@@ -372,8 +366,9 @@ def set_clk_bypass(vector_writer: HP93000VectorWriter, qosc_bypass, ref_bypass, 
 @click.option("--unstable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of unstable cycles unil LOCK is de-asserted.")
 @click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
 @click.option("--loop-gain-exponent", default=-7, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=200, show_default=True, help="The number of jtag cycles to wait between writing the two FLL config registers.")
 @pass_VectorWriter
-def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering):
+def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering, wait_cycles):
     """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
 
         The FLL argument determines which of the three independent FLLs in Vega is configured. Which clock (soc_clk,
@@ -381,22 +376,29 @@ def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, to
         APB_SOC_CONTROL module. By default, vega starts up using FLL1 for both, peripheral- (with some clk divider)
         and soc-clock and FLL2 for the cluster clock.
 
-        The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>
+        The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>.
+
+        Since we need to write to two registers, we have to wait long enough for the FLL to become stable again before we try to modify the second registers.
 
     """
     with vector_writer as writer:
         vectors = pulp_tap.init_pulp_tap()
         if fll == "FLL1":
             config1_address = BitArray('0x1a100004')
+            config2_address = BitArray('0x1a100008')
         elif fll == "FLL2":
             config1_address = BitArray('0x1a100014')
+            config2_address = BitArray('0x1a100018')
         else:
             config1_address = BitArray('0x1a100024')
+            config2_address = BitArray('0x1a100028')
         clk_div_value = int(math.log2(int(clk_div)))+1
         config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=136, uint:16', lock, clk_div_value, mult)
         config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint:6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, -loop_gain_exponent)
 
-        vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value, config2_value], comment="Configure {}".format(fll))
+        vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value], comment="Configure {}".format(fll))
+        vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+        vectors += pulp_tap.write32(start_addr=config2_address, data=[config2_value], comment="Configure {}".format(fll))
         writer.write_vectors(vectors)
 
 
