@@ -1,3 +1,4 @@
+import math
 import re
 from pathlib import Path
 
@@ -85,11 +86,13 @@ def write_soc_config(vector_writer: HP93000VectorWriter, blade, edram, hd_mem_ba
 @click.option("--edram/--no-edram", default=True, help="Enables/Disables the eDRAM macros in Rosetta", show_default=True)
 @click.option("--hd-mem-backend", type=click.Choice(['edram', 'scm']), default='scm', show_default=True, help="Switches between SCM and eDRAM as the memory backend for the HD-Computing "
                                                                                                                  "Accelerator")
-@click.option("--bypass-soc-fll", is_flag=True, default=True, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
-@click.option("--bypass-per-fll", is_flag=True, default=True, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
+@click.option("--bypass-soc-fll", is_flag=True, default=False, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
+@click.option("--bypass-per-fll", is_flag=True, default=False, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
+@click.option("--no-reset", is_flag=True, default=False, show_default=True, help="Don't reset the chip before executing the binary. Helpfull for debugging and to keep custom config preloaded via "
+                                                                                 "JTAG.")
 @pass_VectorWriter
-def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll, compress):
+def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll, compress, no_reset):
     """Generate vectors to load and execute the given elf binary.
 
     The command parses the binary supplied with the '--elf' parameter and
@@ -107,18 +110,19 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 
     with writer as vector_writer:
         vectors = []
-        # Assert reset
-        vector_builder.chip_reset = 0
-        # Wait 1us
-        reset_vector = vector_builder.vector(comment="Assert reset")
-        vectors += vector_builder.loop([reset_vector], 10)
-        # Write the vectors to disk
-        vector_writer.write_vectors(vectors, compress=compress)
+        if not no_reset:
+            # Assert reset
+            vector_builder.chip_reset = 0
+            # Wait 1us
+            reset_vector = vector_builder.vector(comment="Assert reset")
+            vectors += vector_builder.loop([reset_vector], 10)
+            # Write the vectors to disk
+            vector_writer.write_vectors(vectors, compress=compress)
 
-        # Reset the jtag interface and wait for 10 cycles
-        vectors = jtag_driver.jtag_reset()
-        vectors += jtag_driver.jtag_idle_vectors(10)
-        vector_writer.write_vectors(vectors, compress=compress)
+            # Reset the jtag interface and wait for 10 cycles
+            vectors = jtag_driver.jtag_reset()
+            vectors += jtag_driver.jtag_idle_vectors(10)
+            vector_writer.write_vectors(vectors, compress=compress)
 
         # Set the config register to bypass the internall FLLs and release hardreset
         vectors = pulp_tap.set_config_reg(BitArray(8), soc_fll_bypass_en=bypass_soc_fll, per_fll_bypass_en=bypass_per_fll, blade_disable=not blade, edram_disable=not edram,
@@ -128,17 +132,11 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
         vectors += [vector_builder.vector(comment="Release hard reset")]
         vector_writer.write_vectors(vectors, compress=compress)
 
-        # Try writing to L2 memory with PULP Tap
-        vectors = pulp_tap.init_pulp_tap()
-        vectors += pulp_tap.write32(BitArray('0x1c008080'), [BitArray('0xabbaabba')], comment="Write testpattern 0xABBAABBA to L2 start")
-        vectors += pulp_tap.read32_no_loop(BitArray('0x1c008080'), [BitArray('0xabbaabba')], comment="Verify testpattern. Expecting to read 0xABBAABBA")
-        vector_writer.write_vectors(vectors, compress=compress)
-
         # Start boot procedure
         # Halt fabric controller
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.set_dmactive(True)
-        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=50)
+        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=100)
 
         vector_writer.write_vectors(vectors, compress=compress)
 
@@ -165,7 +163,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
-        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=50)
+        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=100)
         vector_writer.write_vectors(vectors, compress=compress)
 
         # Wait for end of computation by polling EOC register address
@@ -174,7 +172,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
                 vectors = riscv_debug_tap.wait_for_end_of_computation(return_code, idle_vector_count=100, max_retries=10)
             else:
                 vectors = [jtag_driver.jtag_idle_vector(repeat=1000, comment="Waiting for computation to finish before checking EOC register.")]
-                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=10)
+                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=5000)
             vector_writer.write_vectors(vectors, compress=compress)
 
 
@@ -338,5 +336,62 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
             vectors += riscv_debug_tap.read_reg_abstract_cmd_no_loop(RISCVReg.CSR_DPC, BitArray(expected_pc,length=32).bin, wait_cycles=wait_cycles, comment="Reading DPC")
             if resume:
                 vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, comment="Resuming the core", wait_cycles=wait_cycles)
+        writer.write_vectors(vectors)
+
+
+@rosetta.command()
+@click.argument("FLL", type=click.Choice(['PER_FLL', 'SOC_FLL']))
+@click.argument("MULT", type=click.IntRange(min=1, max=65535))
+@click.option("--clk-div", default='4', type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
+@click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the FLL lock signal")
+@click.option("--tolerance", default=512, show_default=True, type=click.IntRange(min=0, max=2047), help="The margin around the target multiplication factor for clock to be considered stable.")
+@click.option("--stable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of stable cycles unil LOCK is asserted.")
+@click.option("--unstable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of unstable cycles unil LOCK is de-asserted.")
+@click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
+@click.option("--loop-gain-exponent", default=-7, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=200, show_default=True, help="The number of jtag cycles to wait between writing the two FLL config registers.")
+@pass_VectorWriter
+def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering, wait_cycles):
+    """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
+
+        The FLL argument determines which of the two independent FLLs in Rosetta is configured. 
+
+        The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>.
+
+        Since we need to write to two registers, we have to wait long enough for the FLL to become stable again before we try to modify the second registers.
+
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.init_pulp_tap()
+        if fll == "SOC_FLL":
+            config1_address = BitArray('0x1a100004')
+            config2_address = BitArray('0x1a100008')
+        else: #Cannot be anything other than soc_peripherals. Click lib will make sure of this at invocation.
+            config1_address = BitArray('0x1a100014')
+            config2_address = BitArray('0x1a100018')
+        clk_div_value = int(math.log2(int(clk_div)))+1
+        config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=136, uint:16', lock, clk_div_value, mult)
+        config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint:6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, -loop_gain_exponent)
+
+        vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value], comment="Configure {}".format(fll))
+        vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+        vectors += pulp_tap.write32(start_addr=config2_address, data=[config2_value], comment="Configure {}".format(fll))
+        writer.write_vectors(vectors)
+
+
+@rosetta.command()
+@click.option("--return-code", default=0, type=click.IntRange(min=0, max=255), show_default=True, help="The expected return code.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
+@pass_VectorWriter
+def check_eoc(vector_writer, return_code, wait_cycles):
+    """ Generate vectors to check for the end of computation.
+
+    Programs compiled with the pulp-sdk or pulp-runtime write their exit code to a special end-of-computation register
+    in APB SOC Control when they leave main. The expected return code (by default 0) can be modified to assume any value
+    between 0 and 255. """
+
+    with vector_writer as writer:
+        vectors = riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 
