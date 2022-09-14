@@ -45,7 +45,7 @@ class HP93000VectorReader:
         self.stimuli_file_path = stimuli_file_path
         self.pins = pins
         self.pin_order = None
-        self.physical_to_logical_map = {pin['name']: logical_name for logical_name, pin in pins.items()}
+        self.physical_to_logical_map = {pin.get('avc_name', pin['name']): logical_name for logical_name, pin in pins.items()}
 
     def __enter__(self):
         self._file = self.stimuli_file_path.open('r')
