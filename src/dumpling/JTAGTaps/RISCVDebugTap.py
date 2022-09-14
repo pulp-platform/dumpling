@@ -159,12 +159,16 @@ class DMAbstractCmd:
                               self.reg.to_bits())
 
 class RISCVDebugTap(JTAGTap):
-    def __init__(self, driver: JTAGDriver):
+    def __init__(self, driver: JTAGDriver, idcode: str = "0x249511C3"):
         super().__init__("RISC-V debug module", 5, driver)
         # Add JTAG registers
-        self.reg_soc_idcode = self._add_reg(JTAGRegister("SoC IDCODE", '00001', 32))
+        self.reg_soc_idcode = self._add_reg(JTAGRegister("SoC IDCODE", '00001', 32, BitArray(idcode).bin))
         self.reg_soc_dtmcsr = self._add_reg(JTAGRegister("SoC DTMCSR", '10000', 32))
         self.reg_soc_dmiaccess = self._add_reg(JTAGRegister("SoC DMIACCESS", "10001", 41))
+
+    def verify_idcode(self):
+        """Selects the IDCODE register of this tap (all other TAPs are put into bypass mode) and verifies that IDCODE matches the expected value."""
+        return self.reg_soc_idcode.read(expected_value=self.reg_soc_idcode.default_value, comment="Verifying IDCODE of RISC-V Debug Unit")
 
     def init_dmi(self):
         return self.driver.jtag_set_ir(self, self.reg_soc_dmiaccess.IR_value, comment="Init DMIACCESS (set corresponding IR)")

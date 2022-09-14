@@ -429,3 +429,16 @@ def check_eoc(vector_writer, return_code, wait_cycles):
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
+
+@siracusa.command()
+@pass_VectorWriter
+def verify_idcode(vector_writer):
+    """ Generate vectors to verify IDCODE of the RISC-V debug unit.
+
+    Puts all taps except the debug unit into bypass mode and verifies the value of the debug units IDCODE register.
+    In Siracusa, the value should match "0x249511C3". After the idcode read-out, the debug unit TAP remains selected.
+    """
+    with vector_writer as writer:
+        vectors = riscv_debug_tap.verify_idcode()
+        writer.write_vectors(vectors)
+

@@ -1,3 +1,5 @@
+from bitstring import BitArray
+
 class JTAGRegister:
     """
     A convenience class used by class `JTAGTap` to instantiate JTAG Registers.
@@ -8,10 +10,37 @@ class JTAGRegister:
         e.g. "0100111")
         default number.
     """
-    def __init__(self, name, IR_value, DR_size):
+    def __init__(self, name, IR_value, DR_size, default_value:str=None):
         self.name = name
         self.IR_value = IR_value
         self.DR_size = DR_size
+        self.default_value = default_value
+        self.tap = None
+
+    def atach(self, tap: 'JTAGTap'):
+        self.tap = tap
+
+    def read(self, reg_length = None, expected_value:str=None, comment=""):
+        """
+        A convenience function to generate vectors to read from a JTAG register using dot notation (e.g. my_tap.reg1.read().
+
+        The stimuli generated will first select the correct IR and put all other TAPs into bypass. Then it will shift DR the data out of chip.
+
+         Internally, the register will forward the call to the JTAG driver.
+        This function will fail if the JTAGRegister has not yet been attached to a JTAG Tap!
+
+        Args:
+            reg_length(int): The number of bits to read. If none, the DR length attribute of the register itself will be used.
+            expected_value(str): A string (hex or binary notation) of a value to compare to the data register. If none, the value will not be compared ('X')
+            comment(str): An optional comment with which to annotate the generated vectors
+
+        Returns:
+            List[Mapping]: A list of vectors
+        """
+        if self.tap is None:
+            raise ValueError("Cannot read from a JTAGRegister that has not yet been attached to a JTAGTap. Please call reg.attach(tap) first.")
+        return self.tap.driver.read_reg(self.tap, self, self.DR_size if reg_length is None else reg_length, expected_value, comment)
+
 
 class JTAGTap:
     """
@@ -38,4 +67,5 @@ class JTAGTap:
 
     def _add_reg(self, jtag_reg: JTAGRegister):
         self.registers.append(jtag_reg)
+        jtag_reg.atach(self)
         return jtag_reg
