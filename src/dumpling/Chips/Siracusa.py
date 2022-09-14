@@ -1,6 +1,7 @@
 import math
 import re
 from pathlib import Path
+from collections import namedtuple
 
 import bitstring
 import click
@@ -8,7 +9,7 @@ from dumpling.Common.ElfParser import ElfParser
 from bitstring import BitArray
 bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
-from dumpling.JTAGTaps.PulpJTAGTapRosetta import PULPJTagTapRosetta
+from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
 from dumpling.Common.VectorBuilder import VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
@@ -16,21 +17,53 @@ from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
 
 pins = {
-        'chip_reset' : {'name': 'pad_reset_n', 'default': '1'},
-        'trst': {'name': 'pad_jtag_trst', 'default': '1'},
-        'tms': {'name': 'pad_jtag_tms', 'default': '0'},
-        'tck': {'name': 'pad_jtag_tck', 'default': '0'},
-        'tdi': {'name': 'pad_jtag_tdi', 'default': '0'},
-        'tdo': {'name': 'pad_jtag_tdo', 'default': 'X'}
+        'chip_reset' : {'name': 'reset_n', 'default': '1'},
+        'trst': {'name': 'jtag_trst', 'default': '1'},
+        'tms': {'name': 'jtag_tms', 'default': '0'},
+        'tck': {'name': 'jtag_tck', 'default': '0'},
+        'tdi': {'name': 'jtag_tdi', 'default': '0'},
+        'tdo': {'name': 'jtag_tdo', 'default': 'X'}
     }
 FC_CORE_ID = BitArray('0x003e0')
+
+GPIOFuncMode = namedtuple("GPIOFuncMode", ['value', 'name', 'help'])
+gpio_func_modes = [
+    GPIOFuncMode(0, "register", "Connects the Pad to the internal configuration register. This is the default value."),
+    GPIOFuncMode(1, "port_gpio_gpio00", "Connect port gpio00 from port group gpio to this pad."),
+    GPIOFuncMode(2, "port_i2c0_scl", "Connect port scl from port group i2c0 to this pad."),
+    GPIOFuncMode(3, "port_i2c0_sda", "Connect port sda from port group i2c0 to this pad."),
+    GPIOFuncMode(4, "port_i3c0_puc", "Connect port puc from port group i3c0 to this pad."),
+    GPIOFuncMode(5, "port_i3c0_scl", "Connect port scl from port group i3c0 to this pad."),
+    GPIOFuncMode(6, "port_i3c0_sda", "Connect port sda from port group i3c0 to this pad."),
+    GPIOFuncMode(7, "port_i3c1_puc", "Connect port puc from port group i3c1 to this pad."),
+    GPIOFuncMode(8, "port_i3c1_scl", "Connect port scl from port group i3c1 to this pad."),
+    GPIOFuncMode(9, "port_i3c1_sda", "Connect port sda from port group i3c1 to this pad."),
+    GPIOFuncMode(10, "port_qspim0_csn0", "Connect port csn0 from port group qspim0 to this pad."),
+    GPIOFuncMode(11, "port_qspim0_csn1", "Connect port csn1 from port group qspim0 to this pad."),
+    GPIOFuncMode(12, "port_qspim0_csn2", "Connect port csn2 from port group qspim0 to this pad."),
+    GPIOFuncMode(13, "port_qspim0_csn3", "Connect port csn3 from port group qspim0 to this pad."),
+    GPIOFuncMode(14, "port_qspim0_sck", "Connect port sck from port group qspim0 to this pad."),
+    GPIOFuncMode(15, "port_qspim0_sdio0", "Connect port sdio0 from port group qspim0 to this pad."),
+    GPIOFuncMode(16, "port_qspim0_sdio1", "Connect port sdio1 from port group qspim0 to this pad."),
+    GPIOFuncMode(17, "port_qspim0_sdio2", "Connect port sdio2 from port group qspim0 to this pad."),
+    GPIOFuncMode(18, "port_qspim0_sdio3", "Connect port sdio3 from port group qspim0 to this pad."),
+    GPIOFuncMode(19, "port_qspis0_csn", "Connect port csn from port group qspis0 to this pad."),
+    GPIOFuncMode(20, "port_qspis0_sck", "Connect port sck from port group qspis0 to this pad."),
+    GPIOFuncMode(21, "port_qspis0_sdio0", "Connect port sdio0 from port group qspis0 to this pad."),
+    GPIOFuncMode(22, "port_qspis0_sdio1", "Connect port sdio1 from port group qspis0 to this pad."),
+    GPIOFuncMode(23, "port_qspis0_sdio2", "Connect port sdio2 from port group qspis0 to this pad."),
+    GPIOFuncMode(24, "port_qspis0_sdio3", "Connect port sdio3 from port group qspis0 to this pad."),
+    GPIOFuncMode(25, "port_uart0_rx", "Connect port rx from port group uart0 to this pad."),
+    GPIOFuncMode(26, "port_uart0_tx", "Connect port tx from port group uart0 to this pad.")
+]
+gpio_name_to_func_mode_map = {mode.name: mode for mode in gpio_func_modes}
 
 vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
-# Instantiate the two JTAG taps in Rosetta
+# Instantiate the two JTAG taps in vega
 riscv_debug_tap = RISCVDebugTap(jtag_driver)
-pulp_tap = PULPJTagTapRosetta(jtag_driver)
+pulp_tap = PULPJtagTap(jtag_driver)
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
 jtag_driver.add_tap(pulp_tap)
@@ -40,78 +73,31 @@ jtag_driver.add_tap(pulp_tap)
 pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 
 
-#Entry point for all rosetta related commands
+#Entry point for all vega related commands
 @click.group()
 @click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
-@click.option("--wtb-name", '-w', type=str, default="multiport_ext_clk_wvtbl", show_default=True)
+@click.option("--wtb-name", '-w', type=str, default="multiport", show_default=True)
 @click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
-def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
-    """Generate stimuli for the TSMC65 Rosetta chip.
+def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
+    """Generate stimuli for the GF22 vega chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
     vector_builder.init()
     ctx.obj = HP93000VectorWriter(stimuli_file_path=Path(output), pins=pins, port=port_name, device_cycle_name=device_cycle_name, wtb_name=wtb_name)
 
 
-
-@rosetta.command()
-@click.option("--blade/--no-blade", default=True, help="Enables/Disables the BLADE SRAM macros in Rosetta", show_default=True)
-@click.option("--edram/--no-edram", default=True, help="Enables/Disables the eDRAM macros in Rosetta", show_default=True)
-@click.option("--hd-mem-backend", type=click.Choice(['edram', 'scm']), default='scm', show_default=True,
-              help="Switches between SCM and eDRAM as the memory backend for the HD-Computing Accelerator")
-@click.option("--bypass-soc-fll", is_flag=True, default=False, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
-@click.option("--bypass-per-fll", is_flag=True, default=False, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
-@pass_VectorWriter
-def write_soc_config(vector_writer: HP93000VectorWriter, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
-    """
-    Writes the given static configuration value to the apb_soc_ctrl register.
-
-    """
-    with vector_writer as writer:
-        # Set the config register to bypass the internall FLLs and release hardreset
-        vectors = pulp_tap.init_pulp_tap()
-        vectors += pulp_tap.set_config_reg(BitArray(8), soc_fll_bypass_en=bypass_soc_fll, per_fll_bypass_en=bypass_per_fll, blade_disable=not blade, edram_disable=not edram,
-                                          hd_mem_backend_use_edram=hd_mem_backend == 'edram')
-        writer.write_vectors(vectors)
-
-@rosetta.command()
-@click.option("--blade/--no-blade", default=True, help="Enables/Disables the BLADE SRAM macros in Rosetta", show_default=True)
-@click.option("--edram/--no-edram", default=True, help="Enables/Disables the eDRAM macros in Rosetta", show_default=True)
-@click.option("--hd-mem-backend", type=click.Choice(['edram', 'scm']), default='scm', show_default=True,
-              help="Switches between SCM and eDRAM as the memory backend for the HD-Computing Accelerator")
-@click.option("--bypass-soc-fll", is_flag=True, default=False, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
-@click.option("--bypass-per-fll", is_flag=True, default=False, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
-@pass_VectorWriter
-def verify_soc_config(vector_writer: HP93000VectorWriter, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
-    """
-    Verify that the flags within the current value of the soc config register has the given values
-    """
-    with vector_writer as writer:
-        vectors = pulp_tap.init_pulp_tap()
-        vectors += pulp_tap.verify_config_reg(BitArray(8), soc_fll_bypass_en=bypass_soc_fll, per_fll_bypass_en=bypass_per_fll, blade_disable=not blade, edram_disable=not edram,
-                                          hd_mem_backend_use_edram=hd_mem_backend == 'edram')
-        writer.write_vectors(vectors)
-
-
-
-@rosetta.command()
+@siracusa.command()
 @click.option("--elf", "-e", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="The path to the elf binary to preload.")
 @click.option("--return-code", '-r', type=click.IntRange(min=0, max=255), help="Set a return code to check against during end of computation detection. A matched loop will be inserted to achieve ")
 @click.option("--eoc-wait-cycles", '-w', default=0, type=click.IntRange(min=0), help="If set to a non zero integer, wait the given number of cycles for end of computation check and bdon't use ")
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
-@click.option("--blade/--no-blade", default=True, help="Enables/Disables the BLADE SRAM macros in Rosetta", show_default=True)
-@click.option("--edram/--no-edram", default=True, help="Enables/Disables the eDRAM macros in Rosetta", show_default=True)
-@click.option("--hd-mem-backend", type=click.Choice(['edram', 'scm']), default='scm', show_default=True, help="Switches between SCM and eDRAM as the memory backend for the HD-Computing "
-                                                                                                                 "Accelerator")
-@click.option("--bypass-soc-fll", is_flag=True, default=False, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
-@click.option("--bypass-per-fll", is_flag=True, default=False, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @click.option("--no-reset", is_flag=True, default=False, show_default=True, help="Don't reset the chip before executing the binary. Helpfull for debugging and to keep custom config preloaded via "
                                                                                  "JTAG.")
 @pass_VectorWriter
-def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll, compress, no_reset):
+def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, verify, compress, no_reset):
     """Generate vectors to load and execute the given elf binary.
 
     The command parses the binary supplied with the '--elf' parameter and
@@ -143,9 +129,6 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
             vectors += jtag_driver.jtag_idle_vectors(10)
             vector_writer.write_vectors(vectors, compress=compress)
 
-        # Set the config register to bypass the internall FLLs and release hardreset
-        vectors = pulp_tap.set_config_reg(BitArray(8), soc_fll_bypass_en=bypass_soc_fll, per_fll_bypass_en=bypass_per_fll, blade_disable=not blade, edram_disable=not edram,
-                                          hd_mem_backend_use_edram=hd_mem_backend=='edram')
         vectors += jtag_driver.jtag_idle_vectors(10)
         vector_builder.chip_reset = 1
         vectors += [vector_builder.vector(comment="Release hard reset")]
@@ -190,13 +173,13 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
             if eoc_wait_cycles <= 0:
                 vectors = riscv_debug_tap.wait_for_end_of_computation(return_code, idle_vector_count=100, max_retries=10)
             else:
-                vectors = [jtag_driver.jtag_idle_vector(repeat=1000, comment="Waiting for computation to finish before checking EOC register.")]
+                vectors = [jtag_driver.jtag_idle_vector(repeat=eoc_wait_cycles, comment="Waiting for computation to finish before checking EOC register.")]
                 vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=5000)
             vector_writer.write_vectors(vectors, compress=compress)
 
 
 
-@rosetta.command()
+@siracusa.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops  in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
@@ -210,13 +193,13 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
     address and value are 32-bit value in hex notation and comment is an optional comment to attach to the vectors.
     E.g.::
 
-    write_mem "0x1c008080=0xdeadbeef#Write to start address" 0x1c008084=0x12345678
+    write_mem "0x1c008080=0xdeafbeef#Write to start address" 0x1c008084=0x12345678
 
     If the optional verify flag is provided, the data written will be read back for verification.
     """
     #Parse all address value mappings and store the result in a list of tuples
     data = []
-    pattern = re.compile(r"(?P<address>0x[0-9a-fA-F]{8})=(?P<value>0x[0-9a-fA-F]{0,8})(?:#(?P<comment>.*))?")
+    pattern = re.compile(r"(?P<address>0x[0-9a-f]{8})=(?P<value>0x[0-9a-fA-F]{0,8})(?:#(?P<comment>.*))?")
 
     #Use stdin if the user did not provide any arguments
     if not address_value_mappings:
@@ -242,12 +225,12 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
                 writer.write_vectors(vectors, compress=compress)
 
 
-@rosetta.command()
+@siracusa.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @click.option("--use-pulp-tap", is_flag=True, default=False, show_default=True, help="Use the PULP TAP for readout instead of the RISC-V Debug module.")
-@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete.")
+@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
 @pass_VectorWriter
 def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, use_pulp_tap: bool, wait_cycles: int):
     """
@@ -257,7 +240,7 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
     address and value are 32-bit value in hex notation and comment is an optional comment to attach to the vectors.
     E.g.::
 
-    write_mem "0x1c008080=0xdeadbeef#Write to start address" 0x1c008084=0x12345678
+    verify_mem "0x1c008080=0xdeadbeef#Expecting to read 0xdeadbeef from start address" 0x1c008084=0x12345678
 
     """
     #Parse all address value mappings and store the result in a list of tuples
@@ -290,21 +273,22 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
                     vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
             writer.write_vectors(vectors, compress=compress)
 
-@rosetta.command()
+@siracusa.command()
 @click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
 @pass_VectorWriter
 def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
     """
     Generate vectors to resume the core.
 
-    The vectors will instruct the RISC-V debug module via JTAG to resume the core and after a configurable number of JTAG clock cycles will verify that the core is in the 'running' state.
-    """
+    The vectors will instruct the RISC-V debug module via JTAG to resume the core and after a configurable number of
+    JTAG clock cycles will verify that the core is in the 'running' state. """
+
     with vector_writer as writer:
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 
-@rosetta.command()
+@siracusa.command()
 @click.option('--reset-cycles','-r', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to assert the chip reset line.")
 @pass_VectorWriter
 def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
@@ -324,7 +308,7 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
         vectors += jtag_driver.jtag_idle_vectors(10)
         writer.write_vectors(vectors)
 
-@rosetta.command()
+@siracusa.command()
 @click.option('--pc', type=str, help="Read programm counter and compare it with the expected value provided")
 @click.option('--resume/--no-resume', show_default=True, default=False, help="Resume the core after reading the program counter.")
 @click.option('--assert-reset', is_flag=True, show_default=True, default=False, help="Assert the chip reset line for the whole duration of the generated vectors.")
@@ -333,17 +317,18 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
 def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_reset, wait_cycles):
     """Halt the core, optionally reading the program counter and resuming the core.
 
-    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt the core,
-    optionally read the programm counter and optionally resume the core.
+    This command is mainly useful to verify or debug the execution state of a program. The generated vectors will halt
+    the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
-    dumpling rosetta -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
+    dumpling vega -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 
-    The --assert-reset flag allows to keep the reset line asserted during the exeuction of core halt procedure. This allows to halt the core before it statrts to execute
-    random data right after reset.
+    The --assert-reset flag allows to keep the reset line asserted during the exeuction of core halt procedure. This
+    allows to halt the core before it statrts to execute random data right after reset.
     """
+
     with vector_writer as writer:
         if assert_reset:
             vector_builder.chip_reset = 0
@@ -358,22 +343,44 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
         writer.write_vectors(vectors)
 
 
-@rosetta.command()
-@click.argument("FLL", type=click.Choice(['PER_FLL', 'SOC_FLL']))
-@click.argument("MULT", type=click.IntRange(min=1, max=65535))
-@click.option("--clk-div", default='4', type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
-@click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the FLL lock signal")
-@click.option("--tolerance", default=512, show_default=True, type=click.IntRange(min=0, max=2047), help="The margin around the target multiplication factor for clock to be considered stable.")
-@click.option("--stable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of stable cycles unil LOCK is asserted.")
-@click.option("--unstable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of unstable cycles unil LOCK is de-asserted.")
-@click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
-@click.option("--loop-gain-exponent", default=-7, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
-@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=200, show_default=True, help="The number of jtag cycles to wait between writing the two FLL config registers.")
+@click.argument('gpio_nr', type=click.IntRange(0,42))
+@click.argument('function', type=click.Choice(sorted(gpio_name_to_func_mode_map.keys())))
+@siracusa.command()
 @pass_VectorWriter
-def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering, wait_cycles):
+def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
+    """
+    Configure the provided GPIO to expose the desired function.
+
+    """
+    with vector_writer as writer:
+        vectors = pulp_tap.init_pulp_tap()
+        config_address = BitArray('0x1a140000') + 2*gpio_nr
+        vectors += pulp_tap.write32(start_addr=config_address,
+                                    data=[BitArray(gpio_name_to_func_mode_map[function].value)],
+                                    comment=f"Configure GPIO{gpio_nr:02d} to {function}")
+        writer.write_vectors(vectors)
+
+
+
+@siracusa.command()
+@click.argument("PLL", type=click.Choice(['PLL1_SOC', 'PLL2_PER', 'PLL3_CLUSTER']))
+@click.argument("MULT", type=click.IntRange(min=256, max=16383))
+@click.option("--enable/--disable", default=True, show_default=True, help="Enable/Disable the PLL altogether. If disabled, the other options have no effect but are still programmed into the PLL")
+@click.option("--clk-div", default='0', type=click.IntRange(min=1, max=16), help="Change the clock division factor of DCO clock to PLL output clock.")
+@click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the PLL lock signal")
+@click.option("--lock-count", default=16, show_default=True, type=click.Choice(["8", "16", "32", "64"]), help="The number of stable cycles unil LOCK is asserted.")
+@click.option("--vco-div/--no-vco-div", default=True, show_default=True, type=bool, help="Enable/Disable the fixed divide-by-2 VCO clock divider.")
+@click.option("--failsafe_en/--no-failsafe_en", default=True, show_default=True, type=bool, help="Enable/Disable the failsafe feature within the PLL.")
+@click.option("--freq_change_mask_count", default=32, show_default=True, type=click.IntRange(0,255), help="The number of cycles to mask the output clock during frequency changes.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=200, show_default=True, help="The number of jtag cycles to wait between writing the PLL config registers.")
+@pass_VectorWriter
+def change_freq(vector_writer: HP93000VectorWriter, pll, mult, enable, clk_div, lock, lock_count, vco_div, failsafe_en, freq_change_mask_count, wait_cycles):
     """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
 
-        The FLL argument determines which of the two independent FLLs in Rosetta is configured. 
+        The FLL argument determines which of the three independent FLLs in Vega is configured. Which clock (soc_clk,
+        per_clk and cluster_clk) is derived from which FLL depends on the clock selection settings in the
+        APB_SOC_CONTROL module. By default, vega starts up using FLL1 for both, peripheral- (with some clk divider)
+        and soc-clock and FLL2 for the cluster clock.
 
         The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>.
 
@@ -382,23 +389,32 @@ def change_freq(vector_writer: HP93000VectorWriter, fll, mult, clk_div, lock, to
     """
     with vector_writer as writer:
         vectors = pulp_tap.init_pulp_tap()
-        if fll == "SOC_FLL":
-            config1_address = BitArray('0x1a100004')
-            config2_address = BitArray('0x1a100008')
-        else: #Cannot be anything other than soc_peripherals. Click lib will make sure of this at invocation.
-            config1_address = BitArray('0x1a100014')
-            config2_address = BitArray('0x1a100018')
-        clk_div_value = int(math.log2(int(clk_div)))+1
-        config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=136, uint:16', lock, clk_div_value, mult)
-        config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint:6, uint:4', enable_dithering, tolerance, stable_cycles, unstable_cycles, -loop_gain_exponent)
+        if pll == "PLL1_SOC":
+            status_address = BitArray('0x1a100000')
+            cfg1_address = BitArray('0x1a100004')
+            cfg2_address = BitArray('0x1a100008')
+            cfg3_address = BitArray('0x1a10000C')
+        elif pll == "PLL2_PER":
+            status_address = BitArray('0x1a100010')
+            cfg1_address = BitArray('0x1a100014')
+            cfg2_address = BitArray('0x1a100018')
+            cfg3_address = BitArray('0x1a10001C')
+        else:
+            status_address = BitArray('0x1a100020')
+            cfg1_address = BitArray('0x1a100024')
+            cfg2_address = BitArray('0x1a100028')
+            cfg3_address = BitArray('0x1a10002C')
+        lock_count_value = round(math.log(int(lock_count), 2))-3
+        config1_value = bitstring.pack('0x000000, 0b1, bool, uint:2, 0b0, 0b0, 0b1, bool', lock, lock_count_value, enable)
+        config2_value = bitstring.pack('0x0, uint:8, bool, bool, uint:4, uint:14', freq_change_mask_count, failsafe_en, vco_div, clk_div-1, mult)
 
-        vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value], comment="Configure {}".format(fll))
+        vectors += pulp_tap.write32(start_addr=cfg1_address, data=[config1_value], comment="Configure {}".format(pll))
         vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
-        vectors += pulp_tap.write32(start_addr=config2_address, data=[config2_value], comment="Configure {}".format(fll))
+        vectors += pulp_tap.write32(start_addr=cfg2_address, data=[config2_value], comment="Configure {}".format(pll))
         writer.write_vectors(vectors)
 
 
-@rosetta.command()
+@siracusa.command()
 @click.option("--return-code", default=0, type=click.IntRange(min=0, max=255), show_default=True, help="The expected return code.")
 @click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
 @pass_VectorWriter
@@ -413,4 +429,3 @@ def check_eoc(vector_writer, return_code, wait_cycles):
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
-

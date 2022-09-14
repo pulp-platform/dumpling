@@ -4,6 +4,7 @@ import dumpling.Chips.Rosetta as Rosetta
 import click
 import click_completion
 from dumpling.Chips import Vega
+from dumpling.Chips import Siracusa
 
 click_completion.init()
 _CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -31,9 +32,13 @@ def install_completions(append, case_insensitive, shell, path):
 # Register first level subcommand
 cli.add_command(Rosetta.rosetta)
 cli.add_command(Vega.vega)
+cli.add_command(Siracusa.siracusa)
 
 
 # For debugging purposes only
 if __name__ == '__main__':
     #cli(['rosetta', '-o' 'test.avc', 'write-mem', '0x1c008080=0xdeadbeef'])
-    cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc'])
+    #cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc'])
+    #cli(['vega', 'enable-observability', 'pmu_soc_clken_o'])
+    #cli(['vega', 'set-clk-bypass', '--soc_fll_bypass'])
+    cli(['vega', 'verify-mem', '0x1a100004=0x448805F5# Read Fll config 1', '0x1a100000=0x000005f5# Read Fll1 status'])
