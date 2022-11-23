@@ -108,4 +108,4 @@ Documentation
 =============
 
 You find the complete documentation of dumpling on:
-https://iis-people.ee.ethz.ch/~meggiman/tools/dumpling-doc
+https://dumpling-ate.readthedocs.io/en/latest/
