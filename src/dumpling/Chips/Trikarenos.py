@@ -47,7 +47,7 @@ vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
 # Instantiate the two JTAG taps in Trikarenos PULPissimo
-riscv_debug_tap = RISCVDebugTap(jtag_driver)
+riscv_debug_tap = RISCVDebugTap(jtag_driver, '0x2f33ddb3')
 pulp_tap = PULPJtagTap(jtag_driver)
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
@@ -344,7 +344,7 @@ def verify_idcode(vector_writer):
     """ Generate vectors to verify IDCODE of the RISC-V debug unit.
 
     Puts all taps except the debug unit into bypass mode and verifies the value of the debug units IDCODE register.
-    In Siracusa, the value should match "0x249511C3". After the idcode read-out, the debug unit TAP remains selected.
+    In Trikarenos, the value should match "0x2f33ddb3". After the idcode read-out, the debug unit TAP remains selected.
     """
     with vector_writer as writer:
         vectors = riscv_debug_tap.verify_idcode()
