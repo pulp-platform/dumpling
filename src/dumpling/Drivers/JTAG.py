@@ -18,7 +18,7 @@ from bitstring import BitArray
 
 from dumpling.JTAGTaps.JTAGTap import JTAGTap, JTAGRegister
 
-bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.VectorBuilder import VectorBuilder
 
 class JTAGDriver:

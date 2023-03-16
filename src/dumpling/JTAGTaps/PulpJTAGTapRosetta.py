@@ -17,7 +17,7 @@ from dumpling.Drivers.JTAG import JTAGDriver, JTAGRegister
 from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
 import bitstring
 from bitstring import BitArray
-bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 
 
 class PULPJTagTapRosetta(PULPJtagTap):
