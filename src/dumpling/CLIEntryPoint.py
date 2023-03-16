@@ -19,6 +19,7 @@ import dumpling.Chips.Rosetta as Rosetta
 import click
 from dumpling.Chips import Vega
 from dumpling.Chips import Siracusa
+from dumpling.Chips import Trikarenos
 
 _CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -34,6 +35,7 @@ def cli(*args) -> None:
 cli.add_command(Rosetta.rosetta)
 cli.add_command(Vega.vega)
 cli.add_command(Siracusa.siracusa)
+cli.add_command(Trikarenos.trikarenos)
 
 # For debugging purposes only
 if __name__ == "__main__":
