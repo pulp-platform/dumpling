@@ -48,13 +48,13 @@ jtag_driver = JTAGDriver(vector_builder)
 
 # Instantiate the two JTAG taps in Trikarenos PULPissimo
 riscv_debug_tap = RISCVDebugTap(jtag_driver)
-pulp_tap = PULPJtagTap = (jtag_driver)
+pulp_tap = PULPJtagTap(jtag_driver)
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
 jtag_driver.add_tap(pulp_tap)
 
 # Commands
-pass_VectorWriter = click.make_pass_decoreator(HP93000VectorWriter)
+pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 
 # Entry point for all trikarenos related commands
 @click.group()
@@ -349,4 +349,3 @@ def verify_idcode(vector_writer):
     with vector_writer as writer:
         vectors = riscv_debug_tap.verify_idcode()
         writer.write_vectors(vectors)
-
