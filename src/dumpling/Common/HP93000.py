@@ -158,7 +158,7 @@ class HP93000VectorWriter:
         self._write_header()
 
     def __enter__(self):
-        self.stimuli_file = self.stimuli_file_path.open('a+')
+        self.stimuli_file = self.stimuli_file_path.with_suffix('.avc').open('a+')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -224,7 +224,7 @@ class HP93000VectorWriter:
                 raise ValueError("Got vector with unknown type {}".format(vector['type']))
 
     def _write_header(self):
-        with self.stimuli_file_path.open(mode='w') as stimuli_file:
+        with self.stimuli_file_path.with_suffix('.avc').open(mode='w') as stimuli_file:
             if self.port:
                 stimuli_file.write("PORT " + self.port + " ;\n")
             stimuli_file.write("FORMAT " + ' '.join([pin['name'] for logical_name, pin in sorted(self.pins.items())]) + " ;\n")
