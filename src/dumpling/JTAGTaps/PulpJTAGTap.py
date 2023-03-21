@@ -48,9 +48,9 @@ class PULPJtagTap(JTAGTap):
             return BitArray(self.value)
 
 
-    def __init__(self, driver: JTAGDriver):
+    def __init__(self, driver: JTAGDriver, idcode: str = None):
         super().__init__("PULP JTAG module", 5, driver)
-        self.reg_idcode = self._add_reg(JTAGRegister("IDCODE", '00010', 32))
+        self.reg_idcode = self._add_reg(JTAGRegister("IDCODE", '00010', 32, idcode))
         self.reg_soc_axireg = self._add_reg(JTAGRegister("SoC AXIREG", "00100", 0)) #The size of the axi reg depends on the burst setup
         self.reg_soc_bbmuxreg = self._add_reg(JTAGRegister('SoC BBMUXREG', "00101", 21))
         self.reg_soc_confreg = self._add_reg(JTAGRegister('SoC CONFREG', '00110', 9))

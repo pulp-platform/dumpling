@@ -48,7 +48,7 @@ jtag_driver = JTAGDriver(vector_builder)
 
 # Instantiate the two JTAG taps in Trikarenos PULPissimo
 riscv_debug_tap = RISCVDebugTap(jtag_driver, '0x2f33ddb3')
-pulp_tap = PULPJtagTap(jtag_driver)
+pulp_tap = PULPJtagTap(jtag_driver, '0x20cc2db3')
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
 jtag_driver.add_tap(pulp_tap)
@@ -64,7 +64,7 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
 def trikarenos(ctx, port_name, wtb_name, device_cycle_name, output):
-    """Generate stimuli for the GF22 vega chip.
+    """Generate stimuli for the TSMC28 trikarenos chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
     vector_builder.init()
@@ -301,7 +301,7 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
     the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
-    dumpling vega -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
+    dumpling trikarenos -o halt_core halt_core_verify_pc --pc 0c1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 

@@ -45,11 +45,11 @@ command ``dumpling``. To simplify the usage of the CLI, *dumpling* provides
 shell completion (TAB completion) for its arguments and subcommands. In order to
 benefit from this feature, the completions need to be installed for your shell
 of choice. This can be done without much effort using the
-``install_completions`` subcommand:
+``install-completions`` subcommand:
 
 .. code-block:: bash
 
-   dumpling install_completions
+   dumpling install-completions
 
 This command will detect the shell that's currently in use (officially supported
 are bash, zsh, fish and Powershell) and install the shell completion by
