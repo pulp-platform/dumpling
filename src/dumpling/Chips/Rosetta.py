@@ -572,7 +572,7 @@ def verify_mem(
             vectors = pulp_tap.init_pulp_tap()
         else:
             vectors = riscv_debug_tap.init_dmi()
-            vectors += riscv_debug_tap.enable_sbreadonaddr()
+            vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
             if loop:
                 if use_pulp_tap:

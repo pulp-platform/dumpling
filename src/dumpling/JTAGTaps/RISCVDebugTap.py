@@ -21,12 +21,14 @@ See the documentation of ``JTAGDriver`` for an example.
 
 """
 
+import os
 import re
 from enum import Enum
 from typing import List, Literal, Optional, Union, overload
 
 import bitstring
 from bitstring import BitArray
+from dumpling.Common.ElfParser import ElfParser
 from dumpling.Common.Utilities import pp_binstr
 from dumpling.Common.VectorBuilder import NormalVector, Vector, VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver, JTAGRegister, JTAGTap
@@ -1098,7 +1100,7 @@ class RISCVDebugTap(JTAGTap):
             self,
             addr: BitArray,
             data: BitArray,
-            verify_completion: Literal[False] = True,
+            verify_completion: Literal[False] = False,
             retries: int = 1,
             comment: Optional[str] = None,
     ) -> List[NormalVector]:
@@ -1244,9 +1246,7 @@ class RISCVDebugTap(JTAGTap):
         assert isinstance(expected_data, str)  # Fix type check errors
         if comment is None:
             comment = ""
-        comment += "/Reading from systembus @0x{} expecting 0x".format(
-            addr.hex, expected_data_repr
-        )
+        comment += f"/Reading from systembus @0x{addr.hex} expecting 0x{expected_data_repr}"
         vectors = self.write_debug_reg(
             DMRegAddress.SBADDRESS0, addr.bin, verify_completion=False, comment=comment
         )
@@ -1261,33 +1261,23 @@ class RISCVDebugTap(JTAGTap):
         )
         return vectors
 
-    def enable_sbreadonaddr(self) -> List[NormalVector]:
-        """
-        Enable auto read on systembus
-        Returns:
 
-        """
-        # Enable sbreadonaddr by writing appropriate values to SBCS register
-        sbcs_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+
+    def set_sbcs(self, sbreadonaddr: bool, sbautoincrement: bool = False, comment: Optional[str] = None) -> List[NormalVector]:
+        # Set sbcs by writing appropriate values to SBCS register
+        sbcs_value: BitArray = BitArray(32) # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         sbcs_value[29:32] = 1
-        sbcs_value[20] = 1
+        sbcs_value[20] = 1 if sbreadonaddr else 0
         sbcs_value[17:20] = 2
-        return self.write_debug_reg(
-            DMRegAddress.SBCS,
-            sbcs_value.bin,
-            verify_completion=False,
-            comment="Enable sbreadonaddr flag in SBCS reg for " "subsequent reads.",
-        )
+        sbcs_value[16] = 1 if sbautoincrement else 0
+        if comment is None:
+            comment = ""
+        comment += f"Set SBCS reg for subsequent reads to sbreadonaddr={sbreadonaddr} and sbautoincrement={sbautoincrement}."
+        return self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment=comment)
+    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
+        vectors = self.set_sbcs(True)
 
-    def check_end_of_computation(
-        self,
-        expected_return_code: int,
-        wait_cycles: int = 10,
-        eoc_reg_addr: str = "0x1a1040a0",
-    ) -> List[Vector]:
-        vectors: List[Vector] = list(self.enable_sbreadonaddr())
-
-        expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32) # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_eoc_value[31] = 1
         vectors += self.readMem_no_loop(
             BitArray(eoc_reg_addr),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
@@ -1304,18 +1294,18 @@ class RISCVDebugTap(JTAGTap):
         expected_return_code: int,
         idle_vector_count: int = 10,
         max_retries: int = 10,
+        wait_cycles: int = 10,
         eoc_reg_addr: str = "0x1a1040a0",
     ) -> List[Vector]:
-        vectors: List[Vector] = list(self.enable_sbreadonaddr())
+        vectors: List[Vector] = list(self.set_sbcs(True))
 
         expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_eoc_value[31] = 1
         condition_vectors = self.readMem_no_loop(
             BitArray(eoc_reg_addr),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
             expected_eoc_value,
-            comment="Wait for end of computation with expected return code {}".format(
-                expected_return_code
-            ),
+            comment=f"Wait for end of computation with expected return code {expected_return_code}",
+            wait_cycles=wait_cycles,
         )
         # Pad the condition vectors to be a multiple of 8
         condition_vectors = VectorBuilder.pad_vectors(
@@ -1334,4 +1324,21 @@ class RISCVDebugTap(JTAGTap):
         vectors += self.driver.jtag_idle_vectors(
             8
         )  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
+        return vectors
+
+    def loadL2(self, elf_binary: os.PathLike, comment: Optional[str]=None):
+        stim_generator = ElfParser(verbose=False)
+        stim_generator.add_binary(elf_binary)
+        stimuli = stim_generator.parse_binaries(4)
+        vectors = []
+        vectors += self.set_sbcs(False, True, comment)
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
+            if not prev_addr or prev_addr+4 != int(addr):
+                vectors += self.write_debug_reg(DMRegAddress.SBADDRESS0, BitArray(addr).bin, verify_completion=False, comment="Writing start address")
+            prev_addr = int(addr)
+            vectors += self.write_debug_reg(DMRegAddress.SBDATA0, BitArray(word).bin, verify_completion=False, comment="Writing data")
+
+        vectors += self.set_sbcs(True, False)
+
         return vectors
