@@ -487,18 +487,18 @@ class RISCVDebugTap(JTAGTap):
         return vectors
 
 
-    def enable_sbreadonaddr(self):
-        # Enable sbreadonaddr by writing appropriate values to SBCS register
+    def set_sbcs(self, sbreadonaddr: bool, sbautoincrement: bool = False):
+        # Set sbcs by writing appropriate values to SBCS register
         sbcs_value = BitArray(32)
         sbcs_value[29:32] = 1
-        sbcs_value[20] = 1
+        sbcs_value[20] = 1 if sbreadonaddr else 0
         sbcs_value[17:20] = 2
-        return self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment="Enable sbreadonaddr flag in SBCS reg for "
-                                                                                                                                                    "subsequent reads.")
-
+        sbcs_value[16] = 1 if sbautoincrement else 0
+        return self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment="Set SBCS reg for subsequent reads to sbreadonaddr={} and sbautoincrement={}.".format(
+            sbreadonaddr, sbautoincrement))
 
     def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
-        vectors = self.enable_sbreadonaddr()
+        vectors = self.set_sbcs(True)
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
@@ -508,7 +508,7 @@ class RISCVDebugTap(JTAGTap):
 
 
     def wait_for_end_of_computation(self, expected_return_code: int, idle_vector_count=10, max_retries=10, eoc_reg_addr = '0x1a1040a0'):
-        vectors = self.enable_sbreadonaddr()
+        vectors = self.set_sbcs(True)
 
         expected_eoc_value = BitArray(int=expected_return_code, length=32)
         expected_eoc_value[31] = 1
@@ -521,4 +521,25 @@ class RISCVDebugTap(JTAGTap):
         idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
         vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, max_retries)
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
+        return vectors
+
+    def loadL2(self, elf_binary:str, comment=""):
+        stim_generator = ElfParser(verbose=False)
+        stim_generator.add_binary(elf_binary)
+        stimuli = stim_generator.parse_binaries(4)
+
+        vectors = []
+
+        vectors += self.set_sbcs(False, True)
+        
+        start_addr = None
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
+            if not prev_addr or prev_addr+4 != int(addr):
+                vectors += self.write_debug_reg(DMRegAddress.SBADDRESS0, addr.bin, verify_completion=False, comment="Writing start address")
+            prev_addr = int(addr)
+            vectors += self.write_debug_reg(DMRegAddress.SBDATA0, word.bin, verify_completion=False, comment="Writing data")
+
+        vectors += self.set_sbcs(True, False)
+
         return vectors

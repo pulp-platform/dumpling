@@ -291,7 +291,7 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
             vectors = pulp_tap.init_pulp_tap()
         else:
             vectors = riscv_debug_tap.init_dmi()
-            vectors += riscv_debug_tap.enable_sbreadonaddr()
+            vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
             if loop:
                 if use_pulp_tap:
