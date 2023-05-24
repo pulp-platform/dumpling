@@ -241,7 +241,7 @@ class PULPJtagTap(JTAGTap):
         vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)
         return vectors
 
-    def verifyL2_no_loop(self, elf_binary: str, comment=""):
+    def verifyL2_no_loop(self, elf_binary: str, wait_cycles=3, comment=""):
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
         stimuli = stim_generator.parse_binaries(4)
@@ -257,14 +257,14 @@ class PULPJtagTap(JTAGTap):
                 start_addr = int(addr)
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
-                vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
+                vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data, wait_cycles=wait_cycles, comment=comment)
                 start_addr = int(addr)
                 burst_data = []
             prev_addr = int(addr)
             burst_data.append(BitArray(uint=int(word), length=32))
 
         # Create the final burst
-        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
+        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data, wait_cycles=wait_cycles, comment=comment)
         return vectors
 
     # def wait_for_end_of_computation(self, expected_return_code:int, retries=10, idle_cycles=100):
