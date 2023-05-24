@@ -73,7 +73,7 @@ def trikarenos(ctx, port_name, wtb_name, device_cycle_name, output):
 @trikarenos.command()
 @click.option("--elf", "-e", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="The path to the elf binary to preload.")
 @click.option("--return-code", '-r', type=click.IntRange(min=0, max=255), help="Set a return code to check against during end of computation detection. A matched loop will be inserted to achieve ")
-@click.option("--eoc-wait-cycles", '-w', default=0, type=click.IntRange(min=0), help="If set to a non zero integer, wait the given number of cycles for end of computation check and bdon't use ")
+@click.option("--eoc-wait-cycles", '-w', default=6, type=click.IntRange(min=0), help="If set to a non zero integer, wait the given number of cycles for end of computation check and bdon't use ")
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @click.option("--no-reset", is_flag=True, default=False, show_default=True, help="Don't reset the chip before executing the binary. Helpfull for debugging and to keep custom config preloaded via "
@@ -142,7 +142,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 
         # Optionally verify the data we just wrote to L2
         if verify:
-            vectors = pulp_tap.verifyL2_no_loop(elf, comment="Verify the content of L2 to match the binary.")
+            vectors = pulp_tap.verifyL2_no_loop(elf, wait_cycles=eoc_wait_cycles, comment="Verify the content of L2 to match the binary.")
             vector_writer.write_vectors(vectors)
 
         # Resume core
@@ -164,8 +164,10 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops  in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
+@click.option("--pulp/--riscv", default=False, help="If true, the RISC-V TAP is used.")
+@click.option("--wait-cycles", type=click.IntRange(0), default=6, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant for PULP tap and not loop")
 @pass_VectorWriter
-def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress):
+def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress, pulp, wait_cycles):
     """
     Perform write transactions to the system bus.
 
@@ -192,16 +194,29 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
             data.append((BitArray(match.group('address')), BitArray(match.group('value')), match.group('comment')))
 
     with vector_writer as writer:
-        vectors = pulp_tap.init_pulp_tap()
+        if pulp:
+            vectors = pulp_tap.init_pulp_tap()
+        else:
+            vectors = riscv_debug_tap.init_dmi()
+            vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
-            vectors += pulp_tap.write32(start_addr=address, data=[value], comment=comment if comment else "")
+            if pulp:
+                vectors += pulp_tap.write32(start_addr=address, data=[value], comment=comment if comment else "")
+            else:
+                vectors += riscv_debug_tap.writeMem(addr=address, data=value, comment=comment if comment else "")
             writer.write_vectors(vectors, compress=compress)
         if verify:
             for address, value, comment in data:
                 if loop:
-                    vectors = pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
+                    if pulp:
+                        vectors = pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
+                    else:
+                        vectors = riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
                 else:
-                    vectors = pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], comment=comment if comment else "")
+                    if pulp:
+                        vectors = pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], wait_cycles=wait_cycles, comment=comment if comment else "")
+                    else:
+                        vectors = riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
                 writer.write_vectors(vectors, compress=compress)
 
 
@@ -210,7 +225,7 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
 @click.option("--use-pulp-tap", is_flag=True, default=False, show_default=True, help="Use the PULP TAP for readout instead of the RISC-V Debug module.")
-@click.option("--wait-cycles", type=click.IntRange(0), default=10, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
+@click.option("--wait-cycles", type=click.IntRange(0), default=6, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
 @pass_VectorWriter
 def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, use_pulp_tap: bool, wait_cycles: int):
     """
@@ -254,7 +269,7 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
             writer.write_vectors(vectors, compress=compress)
 
 @trikarenos.command()
-@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=6, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
 @pass_VectorWriter
 def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
     """
@@ -292,7 +307,7 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
 @click.option('--pc', type=str, help="Read programm counter and compare it with the expected value provided")
 @click.option('--resume/--no-resume', show_default=True, default=False, help="Resume the core after reading the program counter.")
 @click.option('--assert-reset', is_flag=True, show_default=True, default=False, help="Assert the chip reset line for the whole duration of the generated vectors.")
-@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait before verifying that core was actually halted.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=6, show_default=True, help="The number of cycles to wait before verifying that core was actually halted.")
 @pass_VectorWriter
 def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_reset, wait_cycles):
     """Halt the core, optionally reading the program counter and resuming the core.
@@ -324,7 +339,7 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
 
 @trikarenos.command()
 @click.option("--return-code", default=0, type=click.IntRange(min=0, max=255), show_default=True, help="The expected return code.")
-@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=6, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
 @pass_VectorWriter
 def check_eoc(vector_writer, return_code, wait_cycles):
     """ Generate vectors to check for the end of computation.

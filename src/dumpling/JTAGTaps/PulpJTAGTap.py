@@ -329,7 +329,8 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.write32(
-                    BitArray(uint=start_addr, length=32), burst_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    BitArray(uint=start_addr, length=32), burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    comment=comment
                 )
                 start_addr = int(addr)
                 burst_data = []
@@ -358,7 +359,7 @@ class PULPJtagTap(JTAGTap):
                 start_addr = int(addr)
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
-                vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data, retries=retries, comment=comment)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
                 start_addr = int(addr)
                 burst_data = []
             prev_addr = int(addr)
@@ -369,7 +370,7 @@ class PULPJtagTap(JTAGTap):
         return vectors
 
     def verifyL2_no_loop(
-        self, elf_binary: os.PathLike, comment: Optional[str] = None
+            self, elf_binary: os.PathLike, wait_cycles: int = 3, comment: Optional[str] = None,
     ) -> List[NormalVector]:
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
@@ -387,7 +388,9 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.read32_no_loop(
-                    BitArray(uint=start_addr, length=32), burst_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    BitArray(uint=start_addr, length=32), burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    wait_cycles=wait_cycles,
+                    comment=comment
                 )
                 start_addr = int(addr)
                 burst_data = []
@@ -395,7 +398,7 @@ class PULPJtagTap(JTAGTap):
             burst_data.append(BitArray(uint=int(word), length=32))
 
         # Create the final burst
-        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data, wait_cycles, comment=comment)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         return vectors
 
     # def wait_for_end_of_computation(self, expected_return_code:int, retries=10, idle_cycles=100):
