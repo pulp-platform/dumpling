@@ -22,6 +22,7 @@ import click_completion
 from dumpling.Chips import Vega
 from dumpling.Chips import Siracusa
 from dumpling.Chips import Trikarenos
+from dumpling.Chips import Cerberus
 
 click_completion.init()
 _CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -51,6 +52,7 @@ cli.add_command(Rosetta.rosetta)
 cli.add_command(Vega.vega)
 cli.add_command(Siracusa.siracusa)
 cli.add_command(Trikarenos.trikarenos)
+cli.add_command(Cerberus.cerberus)
 
 
 # For debugging purposes only
