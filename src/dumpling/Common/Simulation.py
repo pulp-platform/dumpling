@@ -150,7 +150,7 @@ class CocotbVectorDriver:
             await Timer(wave_period_ps-acq_delay_ps, units='ps')
             if expected_value not in ['X', 'x']:
                 if not signal.value.is_resolvable or signal != BinaryValue(expected_value):
-                    signal._log.error("Missmatch on signal {}: Was {} instead of {}".format(signal._name, signal.value,expected_value))
+                    signal._log.error("Mismatch on signal {}: Was {} instead of {}".format(signal._name, signal.value,expected_value))
                     match = False
             await Timer(acq_delay_ps, units='ps')
             return match
