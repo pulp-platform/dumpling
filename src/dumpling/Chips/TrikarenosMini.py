@@ -31,12 +31,12 @@ from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
 # Pin Setup
 pins = {
-        'chip_reset' : {'name': 'reset_n', 'default': '1'},
-        'trst': {'name': 'jtag_trst', 'default': '1'},
-        'tms': {'name': 'jtag_tms', 'default': '0'},
-        'tck': {'name': 'jtag_tck', 'default': '0'},
-        'tdi': {'name': 'jtag_tdi', 'default': '0'},
-        'tdo': {'name': 'jtag_tdo', 'default': 'X'}
+        'chip_reset' : {'name': 'mini_reset_n', 'default': '1'},
+        'trst': {'name': 'mini_jtag_trst', 'default': '1'},
+        'tms': {'name': 'mini_jtag_tms', 'default': '0'},
+        'tck': {'name': 'mini_jtag_tck', 'default': '0'},
+        'tdi': {'name': 'mini_jtag_tdi', 'default': '0'},
+        'tdo': {'name': 'mini_jtag_tdo', 'default': 'X'}
     }
 FC_CORE_ID = BitArray('0x003e0')
 
@@ -46,31 +46,29 @@ FC_CORE_ID = BitArray('0x003e0')
 vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
-# Instantiate the two JTAG taps in Trikarenos PULPissimo
-riscv_debug_tap = RISCVDebugTap(jtag_driver, '0x2f33ddb3')
-pulp_tap = PULPJtagTap(jtag_driver, '0x20cc2db3')
+# Instantiate the two JTAG taps in Trikarenos miniPULP
+riscv_debug_tap = RISCVDebugTap(jtag_driver, '0x19a6edb3')
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
-jtag_driver.add_tap(pulp_tap)
 
 # Commands
 pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 
-# Entry point for all trikarenos related commands
+# Entry point for all trikarenos mini related commands
 @click.group()
-@click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
+@click.option("--port-name", '-p', type=str, default="mini_jtag_and_reset_port", show_default=True)
 @click.option("--wtb-name", '-w', type=str, default="multiport", show_default=True)
 @click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
-def trikarenos(ctx, port_name, wtb_name, device_cycle_name, output):
+def minitrik(ctx, port_name, wtb_name, device_cycle_name, output):
     """Generate stimuli for the TSMC28 trikarenos chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
     vector_builder.init()
     ctx.obj = HP93000VectorWriter(stimuli_file_path=Path(output), pins=pins, port=port_name, device_cycle_name=device_cycle_name, wtb_name=wtb_name)
 
-@trikarenos.command()
+@minitrik.command()
 @click.option("--elf", "-e", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="The path to the elf binary to preload.")
 @click.option("--return-code", '-r', type=click.IntRange(min=0, max=255), help="Set a return code to check against during end of computation detection. A matched loop will be inserted to achieve ")
 @click.option("--eoc-wait-cycles", '-w', default=6, type=click.IntRange(min=0), help="If set to a non zero integer, wait the given number of cycles for end of computation check and bdon't use ")
@@ -136,14 +134,14 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
         vector_writer.write_vectors(vectors, compress=compress)
 
         # Load L2 memory
-        vectors = pulp_tap.init_pulp_tap()
-        vectors += pulp_tap.loadL2(elf_binary=elf)
+        # vectors = pulp_tap.init_pulp_tap()
+        vectors += riscv_debug_tap.loadL2(elf_binary=elf)
         vector_writer.write_vectors(vectors, compress=compress)
 
         # Optionally verify the data we just wrote to L2
-        if verify:
-            vectors = pulp_tap.verifyL2_no_loop(elf, wait_cycles=eoc_wait_cycles, comment="Verify the content of L2 to match the binary.")
-            vector_writer.write_vectors(vectors)
+        # if verify:
+        #     vectors = pulp_tap.verifyL2_no_loop(elf, wait_cycles=eoc_wait_cycles, comment="Verify the content of L2 to match the binary.")
+        #     vector_writer.write_vectors(vectors)
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
@@ -159,15 +157,14 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
                 vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=5000)
             vector_writer.write_vectors(vectors, compress=compress)
 
-@trikarenos.command()
+@minitrik.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--verify/--no-verify", default=True, help="Enables/Disables verifying the content written to L2.", show_default=True)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops  in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
-@click.option("--pulp/--riscv", default=False, help="If true, the RISC-V TAP is used.")
 @click.option("--wait-cycles", type=click.IntRange(0), default=6, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant for PULP tap and not loop")
 @pass_VectorWriter
-def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress, pulp, wait_cycles):
+def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress, wait_cycles):
     """
     Perform write transactions to the system bus.
 
@@ -194,40 +191,27 @@ def write_mem(vector_writer: HP93000VectorWriter, address_value_mappings, verify
             data.append((BitArray(match.group('address')), BitArray(match.group('value')), match.group('comment')))
 
     with vector_writer as writer:
-        if pulp:
-            vectors = pulp_tap.init_pulp_tap()
-        else:
-            vectors = riscv_debug_tap.init_dmi()
-            vectors += riscv_debug_tap.set_sbcs(True)
+        vectors = riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
-            if pulp:
-                vectors += pulp_tap.write32(start_addr=address, data=[value], comment=comment if comment else "")
-            else:
-                vectors += riscv_debug_tap.writeMem(addr=address, data=value, comment=comment if comment else "")
+            vectors += riscv_debug_tap.writeMem(addr=address, data=value, comment=comment if comment else "")
             writer.write_vectors(vectors, compress=compress)
         if verify:
             for address, value, comment in data:
                 if loop:
-                    if pulp:
-                        vectors = pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
-                    else:
-                        vectors = riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
+                    vectors = riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
                 else:
-                    if pulp:
-                        vectors = pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], wait_cycles=wait_cycles, comment=comment if comment else "")
-                    else:
-                        vectors = riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
+                    vectors = riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
                 writer.write_vectors(vectors, compress=compress)
 
 
-@trikarenos.command()
+@minitrik.command()
 @click.argument('address_value_mappings', nargs=-1)
 @click.option("--loop/--no-loop", default=False, help="If true, all matched loops in the verification vectors are replaced with reasonable delays to avoid the usage of matched loops altogether.")
 @click.option("--compress", '-c', is_flag=True, default=False, show_default=True, help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.")
-@click.option("--use-pulp-tap", is_flag=True, default=False, show_default=True, help="Use the PULP TAP for readout instead of the RISC-V Debug module.")
 @click.option("--wait-cycles", type=click.IntRange(0), default=6, show_default=True, help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used")
 @pass_VectorWriter
-def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, use_pulp_tap: bool, wait_cycles: int):
+def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop, compress: bool, wait_cycles: int):
     """
     Perform read transactions on the system bus and compare the values with expected ones
 
@@ -250,25 +234,16 @@ def verify_mem(vector_writer: HP93000VectorWriter, address_value_mappings, loop,
 
     with vector_writer as writer:
         vector_builder.init()
-        if use_pulp_tap:
-            vectors = pulp_tap.init_pulp_tap()
-        else:
-            vectors = riscv_debug_tap.init_dmi()
-            vectors += riscv_debug_tap.set_sbcs(True)
+        vectors = riscv_debug_tap.init_dmi()
+        vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
             if loop:
-                if use_pulp_tap:
-                    vectors += pulp_tap.read32(start_addr=address, expected_data=[value], comment=comment)
-                else:
-                    vectors += riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
+                vectors += riscv_debug_tap.readMem(addr=address, expected_data=value, comment=comment)
             else:
-                if use_pulp_tap:
-                    vectors += pulp_tap.read32_no_loop(start_addr=address, expected_data=[value], wait_cycles=wait_cycles, comment=comment if comment else "")
-                else:
-                    vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
+                vectors += riscv_debug_tap.readMem_no_loop(addr=address, expected_data=value, wait_cycles=wait_cycles, comment=comment)
             writer.write_vectors(vectors, compress=compress)
 
-@trikarenos.command()
+@minitrik.command()
 @click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=6, show_default=True, help="The number of cycles to wait before verifying that core was actually resumed.")
 @pass_VectorWriter
 def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
@@ -283,7 +258,7 @@ def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
         vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 
-@trikarenos.command()
+@minitrik.command()
 @click.option('--reset-cycles','-r', type=click.IntRange(min=1), default=10, show_default=True, help="The number of cycles to assert the chip reset line.")
 @pass_VectorWriter
 def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
@@ -303,7 +278,7 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
         vectors += jtag_driver.jtag_idle_vectors(10)
         writer.write_vectors(vectors)
 
-@trikarenos.command()
+@minitrik.command()
 @click.option('--pc', type=str, help="Read programm counter and compare it with the expected value provided")
 @click.option('--resume/--no-resume', show_default=True, default=False, help="Resume the core after reading the program counter.")
 @click.option('--assert-reset', is_flag=True, show_default=True, default=False, help="Assert the chip reset line for the whole duration of the generated vectors.")
@@ -316,7 +291,7 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
     the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
-    dumpling trikarenos -o halt_core halt_core_verify_pc --pc 0x1c008080 --resume
+    dumpling minitrik -o halt_core halt_core_verify_pc --pc 0x1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 
@@ -337,7 +312,7 @@ def halt_core_verify_pc(vector_writer: HP93000VectorWriter, pc, resume, assert_r
                 vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, comment="Resuming the core", wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 
-@trikarenos.command()
+@minitrik.command()
 @click.option("--return-code", default=0, type=click.IntRange(min=0, max=255), show_default=True, help="The expected return code.")
 @click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=6, show_default=True, help="The number of cycles to wait for the eoc_register read operation to complete.")
 @pass_VectorWriter
@@ -353,7 +328,7 @@ def check_eoc(vector_writer, return_code, wait_cycles):
         vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=wait_cycles)
         writer.write_vectors(vectors)
 
-@trikarenos.command()
+@minitrik.command()
 @pass_VectorWriter
 def verify_idcode(vector_writer):
     """ Generate vectors to verify IDCODE of the RISC-V debug unit.

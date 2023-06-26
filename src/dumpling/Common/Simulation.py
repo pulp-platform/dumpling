@@ -189,7 +189,7 @@ class CocotbVectorDriver:
                     expected_value
                 ):
                     signal._log.error(
-                        "Missmatch on signal {}: Was {} instead of {}".format(
+                        "Mismatch on signal {}: Was {} instead of {}".format(
                             signal._name, signal.value, expected_value
                         )
                     )
