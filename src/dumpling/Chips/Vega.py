@@ -21,7 +21,10 @@ import bitstring
 import click
 from dumpling.Common.ElfParser import ElfParser
 from bitstring import BitArray
-bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+if (int(bitstring.__version__[0]) < 4):
+    bitstring.set_lsb0(True) #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+else:
+    bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
 from dumpling.JTAGTaps.PulpJTAGTapVega import PULPJtagTapVega
 from dumpling.Common.VectorBuilder import VectorBuilder
