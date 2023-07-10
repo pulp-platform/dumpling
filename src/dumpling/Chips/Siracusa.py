@@ -69,7 +69,7 @@ gpio_func_modes = [
     GPIOFuncMode(23, "port_qspis0_sdio2", "Connect port sdio2 from port group qspis0 to this pad."),
     GPIOFuncMode(24, "port_qspis0_sdio3", "Connect port sdio3 from port group qspis0 to this pad."),
     GPIOFuncMode(25, "port_uart0_rx", "Connect port rx from port group uart0 to this pad."),
-    GPIOFuncMode(26, "port_uart0_tx", "Connect port tx from port group uart0 to this pad.")
+    GPIOFuncMode(26, "port_uart0_tx", "Connect port tx from port group uart0 to this pad."),
 ]
 gpio_name_to_func_mode_map = {mode.name: mode for mode in gpio_func_modes}
 
@@ -378,11 +378,11 @@ def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
 
 
 @siracusa.command()
-@click.argument("PLL", type=click.Choice(['PLL1_SOC', 'PLL2_PER', 'PLL3_CLUSTER']))
+@click.argument("PLL", type=click.Choice(['PLL1_SOC', 'PLL2_CLUSTER', 'PLL3_PER']))
 @click.argument("MULT", type=click.IntRange(min=256, max=16383))
 @click.option("--enable/--disable", default=True, show_default=True, help="Enable/Disable the PLL altogether. If disabled, the other options have no effect but are still programmed into the PLL")
 @click.option("--clk-div", default='0', type=click.IntRange(min=1, max=16), help="Change the clock division factor of DCO clock to PLL output clock.")
-@click.option("--lock", '-l', is_flag = True, default=False, show_default=True, help="Gate the output clock with the PLL lock signal")
+@click.option("--lock", '-l', is_flag = True, default=True, show_default=True, help="Gate the output clock with the PLL lock signal")
 @click.option("--lock-count", default=16, show_default=True, type=click.Choice(["8", "16", "32", "64"]), help="The number of stable cycles unil LOCK is asserted.")
 @click.option("--vco-div/--no-vco-div", default=True, show_default=True, type=bool, help="Enable/Disable the fixed divide-by-2 VCO clock divider.")
 @click.option("--failsafe_en/--no-failsafe_en", default=True, show_default=True, type=bool, help="Enable/Disable the failsafe feature within the PLL.")
@@ -409,7 +409,7 @@ def change_freq(vector_writer: HP93000VectorWriter, pll, mult, enable, clk_div, 
             cfg1_address = BitArray('0x1a100004')
             cfg2_address = BitArray('0x1a100008')
             cfg3_address = BitArray('0x1a10000C')
-        elif pll == "PLL2_PER":
+        elif pll == "PLL2_CLUSTER":
             status_address = BitArray('0x1a100010')
             cfg1_address = BitArray('0x1a100014')
             cfg2_address = BitArray('0x1a100018')
@@ -423,9 +423,13 @@ def change_freq(vector_writer: HP93000VectorWriter, pll, mult, enable, clk_div, 
         config1_value = bitstring.pack('0x000000, 0b1, bool, uint:2, 0b0, 0b0, 0b1, bool', lock, lock_count_value, enable)
         config2_value = bitstring.pack('0x0, uint:8, bool, bool, uint:4, uint:14', freq_change_mask_count, failsafe_en, vco_div, clk_div-1, mult)
 
-        vectors += pulp_tap.write32(start_addr=cfg1_address, data=[config1_value], comment="Configure {}".format(pll))
+        vectors += pulp_tap.write32(start_addr=cfg1_address, data=[config1_value], comment="Configure {} cfg1 to {}".format(pll, config1_value))
         vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
-        vectors += pulp_tap.write32(start_addr=cfg2_address, data=[config2_value], comment="Configure {}".format(pll))
+        vectors += pulp_tap.write32(start_addr=cfg2_address, data=[config2_value], comment="Configure {} cfg2 to {}".format(pll, config2_value))
+        vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+        # vectors += pulp_tap.read32(start_addr=cfg1_address, expected_data=[config1_value], comment="Verifying {} value of cfg1 should be {}". format(pll, config1_value))
+        # vectors += pulp_tap.read32(start_addr=cfg2_address, expected_data=[config2_value],
+        #                            comment="Verifying {} value of cfg1 should be {}".format(pll, config2_value))
         writer.write_vectors(vectors)
 
 

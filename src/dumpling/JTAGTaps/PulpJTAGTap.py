@@ -15,6 +15,8 @@
 # limitations under the License.
 from enum import Enum
 from typing import List
+from tqdm import tqdm
+
 
 import bitstring
 from dumpling.Common.ElfParser import ElfParser
@@ -200,7 +202,7 @@ class PULPJtagTap(JTAGTap):
         burst_data = []
         start_addr = None
         prev_addr = None
-        for addr, word in sorted(stimuli.items()):
+        for addr, word in tqdm(sorted(stimuli.items())):
             if not start_addr:
                 start_addr = int(addr)
             #If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
