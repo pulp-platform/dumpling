@@ -25,7 +25,7 @@ class JTAGRegister:
         e.g. "0100111")
         default number.
     """
-    def __init__(self, name, IR_value, DR_size, default_value:str=None):
+    def __init__(self, name:str, IR_value, DR_size, default_value:str=None):
         self.name = name
         self.IR_value = IR_value
         self.DR_size = DR_size

@@ -57,4 +57,5 @@ if __name__ == '__main__':
     #cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc'])
     #cli(['vega', 'enable-observability', 'pmu_soc_clken_o'])
     #cli(['vega', 'set-clk-bypass', '--soc_fll_bypass'])
-    cli(['vega', 'verify-mem', '0x1a100004=0x448805F5# Read Fll config 1', '0x1a100000=0x000005f5# Read Fll1 status'])
+    #cli(['vega', 'verify-mem', '0x1a100004=0x448805F5# Read Fll config 1', '0x1a100000=0x000005f5# Read Fll1 status'])
+    cli(['siracusa', 'halt-core-verify-pc'])

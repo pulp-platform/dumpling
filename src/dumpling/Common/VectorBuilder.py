@@ -14,11 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-from typing import Mapping, List
+from typing import Mapping, List, TypedDict, Literal, Union, Optional
 
 
+class NormalVector(TypedDict):
+    type: Literal['vec']
+    vector: Mapping[str, str]
+    repeat: int
+    comment: Optional[str]
 
 
+class MatchedLoopVector(TypedDict):
+    type: Literal['match_loop']
+    cond_vectors: List[Union['NormalVector']]
+    idle_vectors: List['NormalVector']
+    retries: int
+
+
+class LoopVector(TypedDict):
+    type: Literal['loop']
+    loop_body: List['Vector']
+    repeat: int
+
+
+Vector = Union[NormalVector, MatchedLoopVector, LoopVector]
+
+class PinDecl(TypedDict):
+    name: str
+    default: str
+    type: Literal['input', 'output']
 
 class VectorBuilder:
     """The VectorRecorder class provides a common interface for
@@ -65,7 +89,7 @@ class VectorBuilder:
     - Normal Vectors:
        ::
 
-       {'type': 'vec', 'vector': <pin_state_map>, 'repeat':int, 'comment':str}
+       {'type': 'vec', 'vector': <pin_state_map>, 'repeat':int, 'comment': Optional[str]}
 
        The <pin_state_map> is another dictionary which contains a mapping of each logical pin name supplied in the pin
        declaration  to pin state character, e.g. '0','1','X' etc. The actual state character used depends on the driver
@@ -103,11 +127,11 @@ class VectorBuilder:
 
     """
 
-    def __init__(self, pins: Mapping[str, Mapping]):
+    def __init__(self, pins: Mapping[str, PinDecl]):
         self.__dict__['pins'] = pins
         self.__dict__['pin_state'] = {logical_name: pin_desc['default'] for logical_name, pin_desc in pins.items()}
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: str):
         """
         Operator overloading that looks up `name` in the internal pin_state dictionary and if found, assigns a new
         state value to the pin.
@@ -130,7 +154,7 @@ class VectorBuilder:
         else:
             self.__dict__[name] = value
 
-    def __getattr__(self, item):
+    def __getattr__(self, item:str):
         if item in self.pins:
             return self.pin_state[item]
         else:
@@ -139,7 +163,7 @@ class VectorBuilder:
     def init(self):
         self.__dict__['pin_state'] = {logical_name: pin_desc['default'] for logical_name, pin_desc in self.pins.items()}
 
-    def vector(self, repeat=1, comment=""):
+    def vector(self, repeat:int = 1, comment: Optional[str] = "") -> NormalVector:
         """
         Generate a single vector representing the current state of each pin. The pin values can be altered with the
         `__setattr__` method::
@@ -163,7 +187,7 @@ class VectorBuilder:
         vector = {'type': 'vec', 'vector': copy.deepcopy(self.pin_state), 'repeat': repeat, 'comment': comment}
         return vector
 
-    def matched_loop(self, condition_vectors: List, idle_vectors: List, retries=5):
+    def matched_loop(self, condition_vectors: List[NormalVector], idle_vectors: List[NormalVector], retries: int = 5) -> MatchedLoopVector:
         """
         Construct a matched loop vector using the given list of condition and idle vectors.
 
@@ -171,7 +195,7 @@ class VectorBuilder:
         need to  contain an exact multiple of 8 vectors. Use the `pad_vectors` static method to pad your list of
         condition and idle vectors with an appropriately chosen padding vector.
 
-        Notes:
+        Note:
             Don't nest matched loops. Although the CocotbVectorDriver correctly handles it the resulting AVC file
             cannot be parsed by the ASIC tester.
 
@@ -184,9 +208,9 @@ class VectorBuilder:
         Returns:
             Mapping: A single vector (dictionary) representing the matched_loop construct
         """
-        return [{'type': 'match_loop', 'cond_vectors': condition_vectors, 'idle_vectors': idle_vectors, 'retries': retries}]
+        return {'type': 'match_loop', 'cond_vectors': condition_vectors, 'idle_vectors': idle_vectors, 'retries': retries}
 
-    def loop(self, loop_body, loop_repeat_count):
+    def loop(self, loop_body:List[Vector], loop_repeat_count:int) -> LoopVector:
         """
         Returns a loop vector with the given loop body and the attribute on how often to repeat the loop body.
 
@@ -197,10 +221,10 @@ class VectorBuilder:
         Returns:
             Mapping: A single vector (dictionary) representing the loop construct
         """
-        return [{'type': 'loop', 'loop_body': loop_body, 'repeat': loop_repeat_count}]
+        return {'type': 'loop', 'loop_body': loop_body, 'repeat': loop_repeat_count}
 
     @staticmethod
-    def compress_vectors(vectors):
+    def compress_vectors(vectors:List[Vector]) -> List[Vector]:
         """
         Compresses the list of vectors by searching for consecutive identical vectors.
 
@@ -219,7 +243,8 @@ class VectorBuilder:
         prev_vector = None
         filtered_vectors = []
         for vec in vectors:
-            if prev_vector and vec['type'] == 'vec' and vec['vector'] == prev_vector['vector'] and vec['comment'] == prev_vector['comment']:
+            if prev_vector and vec['type'] == 'vec' and vec['vector'] == prev_vector['vector'] and vec['comment'] == \
+                    prev_vector['comment']:
                 prev_vector['repeat'] += vec['repeat']
             elif prev_vector:
                 filtered_vectors.append(prev_vector)
@@ -229,7 +254,7 @@ class VectorBuilder:
         return filtered_vectors
 
     @staticmethod
-    def pad_vectors(input_vectors: List, padding_vector):
+    def pad_vectors(input_vectors: List[Vector], padding_vector:NormalVector) -> List[Vector]:
         """
         Append padding vector to the list of input_vectors until its length is a multiple of 8.
 
@@ -246,4 +271,3 @@ class VectorBuilder:
         """
         input_vectors += (8 - len(input_vectors) % 8) * [padding_vector]
         return input_vectors
-

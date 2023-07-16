@@ -13,10 +13,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List
+
 import bitstring
 from bitstring import BitArray
 
 from dumpling.JTAGTaps.JTAGTap import JTAGTap, JTAGRegister
+
+from Common.VectorBuilder import Vector
 
 bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.VectorBuilder import VectorBuilder
@@ -71,7 +75,7 @@ class JTAGDriver:
         self.vector_builder = vector_builder
         self.chain = []
 
-    def set_jtag_default_values(self):
+    def set_jtag_default_values(self) -> None:
         """
         Apply default (idle) values to the jtag pins.
 
@@ -87,7 +91,7 @@ class JTAGDriver:
         self.vector_builder.tdi = '0'
         self.vector_builder.tdo = 'X'
 
-    def add_tap(self, jtag_tap: JTAGTap):
+    def add_tap(self, jtag_tap: JTAGTap) -> None:
         """
         Adds a new JTAG TAP to the chain controlled by this driver instance.
 
@@ -108,7 +112,7 @@ class JTAGDriver:
         self.chain.insert(0, jtag_tap)
 
 
-    def jtag_idle_vector(self, repeat=1, comment=None):
+    def jtag_idle_vector(self, repeat: int = 1, comment: str = None):
         """
         Returns a single vector with the given 'repeat' value to keep the JTAG interface idle.
 
@@ -355,7 +359,7 @@ class JTAGDriver:
         vectors += self.jtag_set_dr(tap, dr_value=reg_length * '0', expected_dr_value=expected_value, comment="Read value from DR. Expected value: {}".format(expected_value))
         return vectors
 
-    def write_reg(self, tap, reg, value, comment=""):
+    def write_reg(self, tap, reg, value, comment="") -> List[Vector]:
         """
         Write the desired `value` to a given JTAG register of a targeted tap.
 

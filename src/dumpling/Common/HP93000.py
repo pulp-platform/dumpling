@@ -16,10 +16,17 @@
 import re
 import textwrap
 from pathlib import Path
-from typing import Mapping, List, TextIO
+from typing import Mapping, List, Iterator
 
-from dumpling.Common.VectorBuilder import VectorBuilder
+from dumpling.Common.VectorBuilder import VectorBuilder, Vector
 from mako.template import Template
+
+from Common.VectorBuilder import PinDecl
+
+
+class AVCPinDecl(PinDecl):
+    avc_name: str
+
 
 class HP93000VectorReader:
     """
@@ -28,7 +35,7 @@ class HP93000VectorReader:
 
     In order to not exhaust the whole system memory when parsing huge AVC files, the Class provides the
     `self.vectors()` generator function that iteratively reads and parses the underlying AVC file while iterating.
-    Additionally the `HP93000VectorReader` implements the the context manager interface to automatically close the
+    Additionally, the `HP93000VectorReader` implements the the context manager interface to automatically close the
     underlying file once all vectors have been consumed.
 
     Examples::
@@ -56,7 +63,7 @@ class HP93000VectorReader:
     'loop_end' : re.compile(r'SQPG\s+LEND\s*;')
     }
 
-    def __init__(self, stimuli_file_path: Path, pins: Mapping[str, Mapping]):
+    def __init__(self, stimuli_file_path: Path, pins: Mapping[str, AVCPinDecl]):
         self.stimuli_file_path = stimuli_file_path
         self.pins = pins
         self.pin_order = None
@@ -69,7 +76,7 @@ class HP93000VectorReader:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._file.close()
 
-    def vectors(self):
+    def vectors(self) -> Iterator[Vector]:
         """
         A generator function that yields a single parsed vector at a time.
 
@@ -164,7 +171,7 @@ class HP93000VectorWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stimuli_file.close()
 
-    def _generate_wtb_and_tmf(self):
+    def _generate_wtb_and_tmf(self) -> None:
         #Generate the WTB and TMF file in the same target directory as the stimuli file with the same stem
         wtb_path = self.stimuli_file_path.with_suffix('.wtb')
         tmf_path = self.stimuli_file_path.with_suffix('.tmf')
@@ -182,7 +189,7 @@ class HP93000VectorWriter:
         Z 5"""))
         tmf_path.write_text(wtb_template.render(port_name=self.port, device_cycle_name=self.device_cycle_name))
 
-    def write_vectors(self, vectors: List[Mapping[str, None]], compress=False):
+    def write_vectors(self, vectors: List[Vector], compress: bool = False) -> None:
         """
         Append the given vectors to the vector file in AVC format.
 
@@ -223,7 +230,7 @@ class HP93000VectorWriter:
             else:
                 raise ValueError("Got vector with unknown type {}".format(vector['type']))
 
-    def _write_header(self):
+    def _write_header(self) -> None:
         with self.stimuli_file_path.open(mode='w') as stimuli_file:
             if self.port:
                 stimuli_file.write("PORT " + self.port + " ;\n")

@@ -279,7 +279,7 @@ class RISCVDebugTap(JTAGTap):
         idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
 
         # Create vectors for a matched loop that repeatedly polls the status register and resets the error bit on mismatch
-        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
+        vectors.append(self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries))
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
@@ -305,7 +305,7 @@ class RISCVDebugTap(JTAGTap):
             idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
 
             # Create vectors for a matched loop that repeatedly polls the status register and resets the error bit on mismatch
-            vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
+            vectors.append(self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries))
             vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
@@ -391,6 +391,7 @@ class RISCVDebugTap(JTAGTap):
 
         # Check the DMSTATUS reg after wait cycles
         vectors += [self.driver.jtag_idle_vector(repeat=wait_cycles, comment="Waiting for core to halt")]
+        breakpoint()
         expected_dm_status = BitArray(32)
         mask = BitArray(32)
         expected_dm_status[9] = 1  # 1 #All halted
@@ -519,6 +520,6 @@ class RISCVDebugTap(JTAGTap):
 
         idle_vectors = self.driver.jtag_idle_vectors(count=idle_vector_count)
         idle_vectors = VectorBuilder.pad_vectors(idle_vectors, self.driver.jtag_idle_vector())
-        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, max_retries)
+        vectors.append(self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, max_retries))
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors

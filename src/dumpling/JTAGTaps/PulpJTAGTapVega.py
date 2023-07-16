@@ -195,7 +195,7 @@ class PULPJtagTapVega(JTAGTap):
         #Pad to multiple of 8 vectors
         condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
         idle_vectors = self.driver.jtag_idle_vectors(8)
-        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
+        vectors.append(self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries))
         vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
 
 

@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+import pathlib
 import re
 from pathlib import Path
 
@@ -59,10 +60,10 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 @click.group()
 @click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
 @click.option("--wtb-name", '-w', type=str, default="multiport", show_default=True)
-@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
+@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True, path_type=Path), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
-def vega(ctx, port_name, wtb_name, device_cycle_name, output):
+def vega(ctx: click.Context, port_name:str, wtb_name:str, device_cycle_name:str, output:Path) ->None:
     """Generate stimuli for the GF22 vega chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
@@ -102,7 +103,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
             vector_builder.chip_reset = 0
             # Wait 1us
             reset_vector = vector_builder.vector(comment="Assert reset")
-            vectors += vector_builder.loop([reset_vector], 10)
+            vectors.append(vector_builder.loop([reset_vector], 10))
             # Write the vectors to disk
             vector_writer.write_vectors(vectors, compress=compress)
 

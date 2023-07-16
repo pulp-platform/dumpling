@@ -13,9 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from numbers import Real
 from pathlib import Path
+from typing import Union, Literal, Coroutine, Awaitable, Callable
 
 import cocotb
+from _decimal import Decimal
 from dumpling.Common.HP93000 import HP93000VectorReader
 from cocotb.binary import BinaryValue
 from cocotb.triggers import Timer
@@ -64,7 +67,7 @@ class CocotbVectorDriver:
     """
 
     @staticmethod
-    def simple_clock_gen_wavefun(period_ps, duty_cycle=0.5 ,start_high=False, idle_low=True):
+    def simple_clock_gen_wavefun(period_ps: Union[Real, Decimal], duty_cycle=0.5 ,start_high=False, idle_low=True):
         """
         This function returns a coroutine wavefunction for clock application with the given period.
 
@@ -81,8 +84,8 @@ class CocotbVectorDriver:
             A coroutine for stimuli application that can be passed to 'CocotbDriver' as a wavefunction in the pin dictionary.
         """
         @cocotb.coroutine
-        async def wavefun(signal, value):
-            if value in [True, 1, '1']: #Make sure its not a string '0'
+        async def wavefun(signal: cocotb.handle.NonHierarchyObject, value: Union[bool, Literal[0, 1, '0', '1']]) -> bool:
+            if value in [True, 1, '1']:  # Make sure it's not a string '0'
                 if start_high:
                     signal <= 1
                     await Timer(int(period_ps*duty_cycle), units='ps')
@@ -104,7 +107,7 @@ class CocotbVectorDriver:
 
 
     @staticmethod
-    def simple_stimuli_appl_wavefun(appl_delay_ps, wave_period_ps):
+    def simple_stimuli_appl_wavefun(appl_delay_ps: int, wave_period_ps: int):
         """
         This function returns a coroutine wavefunction that implements a basic waveform applier that assigns signal the given value the desired skew after the rising clock edge.
 
@@ -120,7 +123,7 @@ class CocotbVectorDriver:
         """
 
         @cocotb.coroutine
-        async def wavefun(signal:cocotb.handle.NonHierarchyObject, value):
+        async def wavefun(signal : cocotb.handle.NonHierarchyObject, value):
             await Timer(appl_delay_ps, units='ps')
             signal <= BinaryValue(value)
             await Timer(wave_period_ps-appl_delay_ps, units='ps')

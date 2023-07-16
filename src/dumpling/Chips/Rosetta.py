@@ -59,10 +59,10 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 @click.group()
 @click.option("--port-name", '-p', type=str, default="jtag_and_reset_port", show_default=True)
 @click.option("--wtb-name", '-w', type=str, default="multiport_ext_clk_wvtbl", show_default=True)
-@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True), default="vectors.avc", show_default=True)
+@click.option('--output', '-o', type=click.Path(exists=False, file_okay=True, writable=True, path_type=Path), default="vectors.avc", show_default=True)
 @click.option("--device_cycle_name", '-d', type=str, default="dvc_1", )
 @click.pass_context
-def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
+def rosetta(ctx: click.Context, port_name:str, wtb_name:str, device_cycle_name:str, output:Path) ->None:
     """Generate stimuli for the TSMC65 Rosetta chip.
     """
     #Instantiate the vector writer and attach it to the command context so subcommands can access it.
@@ -79,7 +79,7 @@ def rosetta(ctx, port_name, wtb_name, device_cycle_name, output):
 @click.option("--bypass-soc-fll", is_flag=True, default=False, help="Bypass the FLL for the SoC clock and use the external SoC clock instead.")
 @click.option("--bypass-per-fll", is_flag=True, default=False, help="Bypass the FLL for the Peripheral clock and use the external clock instead.")
 @pass_VectorWriter
-def write_soc_config(vector_writer: HP93000VectorWriter, blade, edram, hd_mem_backend, bypass_soc_fll, bypass_per_fll):
+def write_soc_config(vector_writer: HP93000VectorWriter, blade:bool, edram:bool, hd_mem_backend:str, bypass_soc_fll:bool, bypass_per_fll:bool):
     """
     Writes the given static configuration value to the apb_soc_ctrl register.
 
@@ -149,7 +149,7 @@ def execute_elf(writer: HP93000VectorWriter, elf, return_code, eoc_wait_cycles, 
             vector_builder.chip_reset = 0
             # Wait 1us
             reset_vector = vector_builder.vector(comment="Assert reset")
-            vectors += vector_builder.loop([reset_vector], 10)
+            vectors.append(vector_builder.loop([reset_vector], 10))
             # Write the vectors to disk
             vector_writer.write_vectors(vectors, compress=compress)
 

@@ -23,6 +23,9 @@ from dumpling.Common.ElfParser import ElfParser
 from dumpling.Common.VectorBuilder import VectorBuilder
 from dumpling.Drivers.JTAG import JTAGTap, JTAGDriver, JTAGRegister
 from bitstring import BitArray
+
+from Common.VectorBuilder import Vector
+
 bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 
 
@@ -46,7 +49,7 @@ class PULPJtagTap(JTAGTap):
         INT_REG_WRITE = '0x9'
         INT_REG_SELECT = '0xD'
 
-        def to_bits(self):
+        def to_bits(self) -> BitArray:
             return BitArray(self.value)
 
 
@@ -60,7 +63,7 @@ class PULPJtagTap(JTAGTap):
         self.reg_soc_bistreg = self._add_reg(JTAGRegister('SoC BISTREG', '01001', 20))
         #self.reg_clk_byp = self._add_reg(JTAGRegister('CLK_BYP', '00111', ))
 
-    def set_config_reg(self, soc_jtag_reg_value: BitArray, sel_fll_clk: bool, comment=""):
+    def set_config_reg(self, soc_jtag_reg_value: BitArray, sel_fll_clk: bool, comment: str = ""):
         """
         Generates stimuli to program the config register.
 
@@ -75,7 +78,7 @@ class PULPJtagTap(JTAGTap):
         comment += "/Set JTAG Config reg to {}, internal FLL {}".format(soc_jtag_reg_value.hex, 'enabled' if sel_fll_clk else 'disabled')
         return self.driver.write_reg(self, self.reg_soc_confreg, id_value, comment=comment)
 
-    def verify_config_reg(self, soc_jtag_reg_value: BitArray, sel_fll_clk: bool, comment=""):
+    def verify_config_reg(self, soc_jtag_reg_value: BitArray, sel_fll_clk: bool, comment: str = ""):
         comment += "/Verify JTAG Config reg is {} and FLL is {}".format(soc_jtag_reg_value.hex, 'enabled' if sel_fll_clk else 'disabled')
         id_value = ('1' if sel_fll_clk else '0') + soc_jtag_reg_value.bin
         return self.driver.read_reg(self, self.reg_soc_confreg, 9, id_value)
@@ -129,7 +132,7 @@ class PULPJtagTap(JTAGTap):
         #  an issue
         return vectors
 
-    def read_burst(self, expected_data:List[BitArray], comment="", retries=1):
+    def read_burst(self, expected_data:List[BitArray], comment="", retries=1) -> List[Vector]:
         comment += "/Read burst data for {} words".format(len(expected_data))
 
         vectors = self.driver.jtag_goto_shift_dr(comment)
@@ -150,22 +153,23 @@ class PULPJtagTap(JTAGTap):
         #Pad to multiple of 8 vectors
         condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
         idle_vectors = self.driver.jtag_idle_vectors(8)
-        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
-        vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
+        vectors.append(self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries))
+        # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
+        vectors += self.driver.jtag_idle_vectors(8)
 
-
-        vectors += self.driver.jtag_shift(len(burst)*'0', expected_chain=burst) #We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
-        #  an issue
+        # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap.
+        # This is not an issue
+        vectors += self.driver.jtag_shift(len(burst)*'0', expected_chain=burst)
         return vectors
 
     def write32(self, start_addr:BitArray, data:List[BitArray], comment=""):
         nwords = len(data)
         comment += "/Write32 burst @{} for {} bytes".format(start_addr, nwords)
-        #Module Selet Command (p.15 of ADV DBG Doc)
+        # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
-        #Setup Burst (p.17 of ADV DBG Doc)
+        # Setup Burst (p.17 of ADV DBG Doc)
         vectors += self.setup_burst(PULPJtagTap.DBG_OP.WRITE32, start_addr, nwords, comment=comment)
-        #Burst the data
+        # Burst the data
         vectors += self.write_burst(data)
         return vectors
 
