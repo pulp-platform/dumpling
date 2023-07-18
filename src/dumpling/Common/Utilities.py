@@ -18,7 +18,7 @@ from typing import Union
 from bitstring import BitArray, Bits
 
 
-def pp_binstr(bits: Union[str, Bits]) -> str:
+def pp_binstr(val: Union[str, Bits]) -> str:
     """Generates a pretty print version of a binary string in compact format.
 
     The default pretty print notation of the `bitstring` package uses an
@@ -33,14 +33,17 @@ def pp_binstr(bits: Union[str, Bits]) -> str:
         str: A compact representation of the binary string using hex and (if not
         multiple of 4 bits) binary notation
     """
-    bits = BitArray(bits)
+    bits = BitArray(val)
     if len(bits) < 7:
         return f"0b{bits.bin}"
     else:
         num_hex_digits = len(bits) // 4
         padding_bits = len(bits) % 4
         str_parts = []
-        str_parts.append(f"0x{bits[0:num_hex_digits*4].hex}")
+        if num_hex_digits > 32:
+            return f"0x{bits[-32*4:].hex}..."
+        else:
+            str_parts.append(f"0x{bits[0:num_hex_digits*4].hex}")
         if padding_bits > 0:
             str_parts.append(f"0b{bits[num_hex_digits*4:].bin}")
             return "[" + ", ".join(reversed(str_parts)) + "]"
