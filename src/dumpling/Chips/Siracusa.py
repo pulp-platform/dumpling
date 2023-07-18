@@ -321,7 +321,7 @@ def execute_elf(
             vectors = pulp_tap.verifyL2_no_loop(
                 elf, comment="Verify the content of L2 to match the binary."
             )
-            vector_writer.write_vectors(vectors)
+            vector_writer.write_vectors(vectors, compress=compress)
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
@@ -690,7 +690,7 @@ def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
 )
 @click.option(
     "--clk-div",
-    default="0",
+    default="1",
     type=click.IntRange(min=1, max=16),
     help="Change the clock division factor of DCO clock to PLL output clock.",
 )
@@ -706,7 +706,7 @@ def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
     "--lock-count",
     default=16,
     show_default=True,
-    type=click.Choice(["8", "16", "32", "64"]),
+    type=click.Choice([8, 16, 32, 64]),
     help="The number of stable cycles unil LOCK is asserted.",
 )
 @click.option(

@@ -282,18 +282,30 @@ class VectorBuilder:
         """
         prev_vector = None
         filtered_vectors = []
+        current_vector: Optional[NormalVector] = None
         for vec in vectors:
-            if prev_vector and prev_vector["type"] == "vec" and vec["type"] == "vec":
-                if (
-                    vec["vector"] == prev_vector["vector"]  # type: ignore
-                    and vec["comment"] == prev_vector["comment"]  # type: ignore
-                ):
-                    prev_vector["repeat"] += vec["repeat"]  # type: ignore
-            elif prev_vector:
-                filtered_vectors.append(prev_vector)
-                prev_vector = vec
+            if vec['type'] == "vec":
+                if current_vector is None:
+                    current_vector = vec.copy()
+                elif current_vector['vector'] == vec['vector'] and current_vector['comment'] == vec['comment']:
+                    current_vector['repeat'] += vec['repeat']
+                else:
+                    filtered_vectors.append(current_vector)
+                    current_vector = vec.copy()
+            elif vec['type'] == "loop":
+                if current_vector:
+                    filtered_vectors.append(current_vector)
+                    current_vector = None
+                copied_vec = vec.copy()
+                copied_vec['loop_body'] = VectorBuilder.compress_vectors(vec['loop_body'])
+                filtered_vectors.append(copied_vec)
             else:
-                prev_vector = vec
+                if current_vector:
+                    filtered_vectors.append(current_vector)
+                    current_vector = None
+                filtered_vectors += vec
+        if current_vector:
+            filtered_vectors.append(current_vector)
         return filtered_vectors
 
     @staticmethod

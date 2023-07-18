@@ -223,7 +223,7 @@ def execute_elf(
             vectors = pulp_tap.verifyL2_no_loop(
                 elf, comment="Verify the content of L2 to match the binary."
             )
-            vector_writer.write_vectors(vectors)
+            vector_writer.write_vectors(vectors, compress=compress)
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
