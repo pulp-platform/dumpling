@@ -813,15 +813,15 @@ def change_freq(
             config2_address = BitArray("0x1a100018")
         clk_div_value = int(math.log2(int(clk_div))) + 1
         config1_value = bitstring.pack(
-            "0b1, bool, uint:4, uint:10=136, uint:16", lock, clk_div_value, mult
+            "uint:16, uint:10=136, uint:4, bool, 0b1", mult, clk_div_value, lock
         )
         config2_value = bitstring.pack(
-            "bool, 0b000, uint:12, uint:6, uint:6, uint:4",
-            enable_dithering,
-            tolerance,
-            stable_cycles,
-            unstable_cycles,
+            "uint:4, uint:6, uint:6, uint:12, 0b000, bool",
             -loop_gain_exponent,
+            unstable_cycles,
+            stable_cycles,
+            tolerance,
+            enable_dithering,
         )
 
         vectors += pulp_tap.write32(

@@ -115,11 +115,11 @@ class PULPJtagTapVega(JTAGTap):
         comment = "Bypassing {}".format(", ".join(enabled_bypasses))
         id_value = bitstring.pack(
             "bool, bool, bool, bool, bool",
-            cluster_fll_byp,
-            soc_fll_byp,
-            per_fll_byp,
-            ref_clk_byp,
             qosc_byp,
+            ref_clk_byp,
+            per_fll_byp,
+            soc_fll_byp,
+            cluster_fll_byp,
         )
         return self.driver.write_reg(
             self, self.reg_soc_clk_byp_reg, id_value.bin, comment=comment
@@ -161,11 +161,11 @@ class PULPJtagTapVega(JTAGTap):
         """
         comment = "Enable observability of {}".format(signal.name)
         dr_value = bitstring.pack(
-            "pad:22, uint:5, uint:2, bool, bool, 0b1",
-            signal.value,
-            drv_strength,
-            pullup_enable,
+            "0b1, bool, bool, uint:2, uint:5, pad:22",
             pulldown_enable,
+            pullup_enable,
+            drv_strength,
+            signal.value,
         )
         return self.driver.write_reg(
             self, self.reg_soc_observ, dr_value.bin, comment=comment

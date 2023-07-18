@@ -147,7 +147,7 @@ class RISCVReg(Enum):
     CSR_IF_EMPTY = "0xC10"  # instruction fetch queue empty
 
     def to_bits(self) -> BitArray:
-        return bitstring.pack("0x0, hex:12", self.value)
+        return bitstring.pack("hex:12, 0x0", self.value)
 
 
 class DMAbstractCmdType(Enum):
@@ -183,14 +183,14 @@ class DMAbstractCmd:
 
     def to_bits(self) -> BitArray:
         return bitstring.pack(
-            "bits, 0b0, uint:3, bool, bool, bool, bool, bits",
-            self.cmd_type.to_bits(),
-            self.aarsize,
-            self.aarpostinc,
-            self.postexec,
-            self.transfer,
-            self.write,
+            "bits, bool, bool, bool, bool, uint:3, 0b0, bits",
             self.reg.to_bits(),
+            self.write,
+            self.transfer,
+            self.postexec,
+            self.aarpostinc,
+            self.aarsize,
+            self.cmd_type.to_bits(),
         )
 
 

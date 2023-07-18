@@ -783,18 +783,18 @@ def change_freq(
             cfg3_address = BitArray("0x1a10002C")
         lock_count_value = round(math.log(int(lock_count), 2)) - 3
         config1_value = bitstring.pack(
-            "0x000000, 0b1, bool, uint:2, 0b0, 0b0, 0b1, bool",
-            lock,
-            lock_count_value,
+            "bool, 0b1, 0b0, 0b0, uint:2, bool, 0b1, 0x000000",
             enable,
+            lock_count_value,
+            lock,
         )
         config2_value = bitstring.pack(
-            "0x0, uint:8, bool, bool, uint:4, uint:14",
-            freq_change_mask_count,
-            failsafe_en,
-            vco_div,
-            clk_div - 1,
+            "uint:14, uint:4, bool, bool, uint:8, 0x0",
             mult,
+            clk_div - 1,
+            vco_div,
+            failsafe_en,
+            freq_change_mask_count,
         )
 
         vectors += pulp_tap.write32(
