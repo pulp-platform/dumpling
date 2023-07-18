@@ -1,7 +1,7 @@
 # Manuel Eggimann <meggimann@iis.ee.ethz.ch>
 #
 # Copyright (C) 2020-2022 ETH Zürich
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from numbers import Real
+import os
 from pathlib import Path
 from typing import Union, Literal, Coroutine, Awaitable, Callable
 
@@ -22,6 +23,8 @@ from _decimal import Decimal
 from dumpling.Common.HP93000 import HP93000VectorReader
 from cocotb.binary import BinaryValue
 from cocotb.triggers import Timer
+from cocotb.handle import NonHierarchyObject
+
 
 class CocotbVectorDriver:
     """
@@ -67,7 +70,12 @@ class CocotbVectorDriver:
     """
 
     @staticmethod
-    def simple_clock_gen_wavefun(period_ps: Union[Real, Decimal], duty_cycle=0.5 ,start_high=False, idle_low=True):
+    def simple_clock_gen_wavefun(
+        period_ps: Union[float, Decimal],
+        duty_cycle: Union[float, Decimal] = 0.5,
+        start_high=False,
+        idle_low=True,
+    ):
         """
         This function returns a coroutine wavefunction for clock application with the given period.
 
@@ -83,31 +91,41 @@ class CocotbVectorDriver:
         Returns:
             A coroutine for stimuli application that can be passed to 'CocotbDriver' as a wavefunction in the pin dictionary.
         """
+
+        # Cast both, period and duty_cycle to Decimal to avoid floating-point inaccuracy issues
+        period_ps = Decimal(period_ps)
+        duty_cycle = Decimal(duty_cycle)
+
         @cocotb.coroutine
-        async def wavefun(signal: cocotb.handle.NonHierarchyObject, value: Union[bool, Literal[0, 1, '0', '1']]) -> bool:
-            if value in [True, 1, '1']:  # Make sure it's not a string '0'
+        async def wavefun(
+            signal: NonHierarchyObject,
+            value: Union[bool, Literal[0, 1, "0", "1"]],
+        ) -> bool:
+            if value in [True, 1, "1"]:  # Make sure it's not a string '0'
                 if start_high:
-                    signal <= 1
-                    await Timer(int(period_ps*duty_cycle), units='ps')
-                    signal <= 0
-                    await Timer(int(period_ps*(1-duty_cycle)), units='ps')
+                    signal.value = 1
+                    await Timer(period_ps * duty_cycle, units="ps")
+                    signal.value = 0
+                    await Timer(period_ps * (1 - duty_cycle), units="ps")
                 else:
-                    signal <= 0
-                    await Timer(int(period_ps*(1-duty_cycle)), units='ps')
-                    signal <= 1
-                    await Timer(int(period_ps*(duty_cycle)), units='ps')
+                    signal.value = 0
+                    await Timer(period_ps * (1 - duty_cycle), units="ps")
+                    signal.value = 1
+                    await Timer(period_ps * (duty_cycle), units="ps")
             else:
                 if idle_low:
-                    signal <= 0
+                    signal.value = 0
                 else:
-                    signal <= 0
-                await Timer(period_ps, units='ps')
-            return True # No missmatchs since we only apply data
+                    signal.value = 0
+                await Timer(period_ps, units="ps")
+            return True  # No missmatchs since we only apply data
+
         return wavefun
 
-
     @staticmethod
-    def simple_stimuli_appl_wavefun(appl_delay_ps: int, wave_period_ps: int):
+    def simple_stimuli_appl_wavefun(
+        appl_delay_ps: Union[Decimal, float], wave_period_ps: Union[Decimal, float]
+    ):
         """
         This function returns a coroutine wavefunction that implements a basic waveform applier that assigns signal the given value the desired skew after the rising clock edge.
 
@@ -121,17 +139,25 @@ class CocotbVectorDriver:
             A coroutine for stimuli application that can be passed to 'CocotbDriver' as a wavefunction in the pin dictionary.
 
         """
+        # Cast both, period and duty_cycle to Decimal to avoid floating-point inaccuracy issues
+        appl_delay_ps = Decimal(appl_delay_ps)
+        wave_period_ps = Decimal(wave_period_ps)
 
         @cocotb.coroutine
-        async def wavefun(signal : cocotb.handle.NonHierarchyObject, value):
-            await Timer(appl_delay_ps, units='ps')
-            signal <= BinaryValue(value)
-            await Timer(wave_period_ps-appl_delay_ps, units='ps')
-            return True #No missmatch since we do only apply data
+        async def wavefun(signal: NonHierarchyObject, value):
+            await Timer(appl_delay_ps, units="ps")
+            signal.value = BinaryValue(value)
+            await Timer(wave_period_ps - appl_delay_ps, units="ps")
+            return True  # No missmatch since we do only apply data
+
         return wavefun
 
     @staticmethod
-    def simple_response_acq_wavefun(acq_delay_ps: float, wave_period_ps: float):
+    def simple_response_acq_wavefun(
+        acq_delay_ps: Union[Decimal, float], wave_period_ps: Union[Decimal, float]
+    ) -> Callable[
+        [NonHierarchyObject, Union[str, int, Literal["x", "X"]]], Awaitable[bool]
+    ]:
         """
         This function returns a coroutine wavefunction that implements a basic waveform acquisition that samples the signal and compares it to the given value 'acq_delay_s' before the end of
         'wave_period_s'.
@@ -147,16 +173,30 @@ class CocotbVectorDriver:
             A coroutine for response acquisition that can be passed to 'CocotbDriver' as a wavefunction in the pin dictionary.
 
         """
+        # Cast both, period and duty_cycle to Decimal to avoid floating-point inaccuracy issues
+        acq_delay_ps = Decimal(acq_delay_ps)
+        wave_period_ps = Decimal(wave_period_ps)
+
         @cocotb.coroutine
-        async def wavefun(signal:cocotb.handle.NonHierarchyObject, expected_value):
+        async def wavefun(
+            signal: NonHierarchyObject,
+            expected_value: Union[str, int, Literal["x", "X"]],
+        ) -> bool:
             match = True
-            await Timer(wave_period_ps-acq_delay_ps, units='ps')
-            if expected_value not in ['X', 'x']:
-                if not signal.value.is_resolvable or signal != BinaryValue(expected_value):
-                    signal._log.error("Missmatch on signal {}: Was {} instead of {}".format(signal._name, signal.value,expected_value))
+            await Timer(wave_period_ps - acq_delay_ps, units="ps")
+            if expected_value not in ["X", "x"]:
+                if not signal.value.is_resolvable or signal != BinaryValue(
+                    expected_value
+                ):
+                    signal._log.error(
+                        "Missmatch on signal {}: Was {} instead of {}".format(
+                            signal._name, signal.value, expected_value
+                        )
+                    )
                     match = False
-            await Timer(acq_delay_ps, units='ps')
+            await Timer(acq_delay_ps, units="ps")
             return match
+
         return wavefun
 
     def __init__(self, pins, dut):
@@ -165,7 +205,7 @@ class CocotbVectorDriver:
         self.vectors = []
         self.dut = dut
 
-    async def simulate_avc(self, avc_path: Path):
+    async def simulate_avc(self, avc_path: os.PathLike) -> bool:
         """
         A Coroutine that parses and iteratively applies all vectors from an AVC file to the device under test.
 
@@ -181,12 +221,12 @@ class CocotbVectorDriver:
         """
         self.dut._log.info("Applying vector from file {} to DUT.".format(avc_path))
         with HP93000VectorReader(avc_path, self.pins) as reader:
-            passed = True
+            passed: bool = True
             for vector in reader.vectors():
                 passed &= await self.apply_vector(vector)
             return passed
 
-    async def apply_vectors(self, vectors):
+    async def apply_vectors(self, vectors) -> bool:
         """
         Apply a list of vectors in intermediate representation to the DUT.
 
@@ -203,7 +243,7 @@ class CocotbVectorDriver:
             passed &= await self.apply_vector(vector)
         return passed
 
-    async def apply_vector(self, vector):
+    async def apply_vector(self, vector) -> bool:
         """
         Applies a single vector in intermediate representation (dictionary) to the DUT.
 
@@ -217,47 +257,59 @@ class CocotbVectorDriver:
         Returns:
             True, if there was a missmatch during application of the vector, False otherwise
         """
-        if vector.get('comment', '') not in ['', None]:
-            self.dut._log.info(vector['comment'])
-        if vector['type'] == 'vec':
-            return_value = True
-            for i in range(vector['repeat']):
-                #Generate a list of all wavefunction coroutines
+        passed = False
+        if vector.get("comment", "") not in ["", None]:
+            self.dut._log.info(vector["comment"])
+        if vector["type"] == "vec":
+            passed = True
+            for i in range(vector["repeat"]):
+                # Generate a list of all wavefunction coroutines
                 wavefuns = []
-                for logical_name, value in vector['vector'].items():
-                    wavefun = self.pins[logical_name]['wavefun']
-                    signal = getattr(self.dut,self.pins[logical_name]['name'])
+                for logical_name, value in vector["vector"].items():
+                    wavefun = self.pins[logical_name]["wavefun"]
+                    signal = getattr(self.dut, self.pins[logical_name]["name"])
                     wavefuns.append(wavefun(signal, value))
-                #Execute all wavefunction in parallel and wait for completion
+                # Execute all wavefunction in parallel and wait for completion
                 forked_coroutines = [cocotb.fork(wavefun) for wavefun in wavefuns]
-                #Aggregate the return value of each coroutine. If one wavefun returns false, the aggregated return value is also false
+                # Aggregate the return value of each coroutine. If one wavefun returns false, the aggregated return value is also false
                 for forked_coroutine in forked_coroutines:
-                    return_value &= await forked_coroutine
-            return return_value
+                    passed &= await forked_coroutine
 
-        elif vector['type'] == 'match_loop':
-            passed = False
+        elif vector["type"] == "match_loop":
             retry_count = 0
             # Try applying the condition vectors
-            self.dut._log.info("Starting matched loop with {} retries.".format(vector['retries']))
-            while not passed and retry_count <= vector['retries']:
+            self.dut._log.info(
+                "Starting matched loop with {} retries.".format(vector["retries"])
+            )
+            while not passed and retry_count <= vector["retries"]:
                 passed = True
-                for cond_vector in vector['cond_vectors']:
+                for cond_vector in vector["cond_vectors"]:
                     passed &= await self.apply_vector(cond_vector)
                 if not passed:
                     retry_count += 1
-                    self.dut._log.info("Matched loop condition failed. Applying idle vectors and trying again.")
-                    for idle_vector in vector['idle_vectors']:
+                    self.dut._log.info(
+                        "Matched loop condition failed. Applying idle vectors and trying again."
+                    )
+                    for idle_vector in vector["idle_vectors"]:
                         await self.apply_vector(idle_vector)
             if not passed:
-                self.dut._log.error("Matched loop failed permanently for {} retries.".format(retry_count))
+                self.dut._log.error(
+                    "Matched loop failed permanently for {} retries.".format(
+                        retry_count
+                    )
+                )
             else:
-                self.dut._log.info("Matched loop succeeded after {} retries".format(retry_count))
-            return passed
-        elif vector['type'] == 'loop':
+                self.dut._log.info(
+                    "Matched loop succeeded after {} retries".format(retry_count)
+                )
+        elif vector["type"] == "loop":
             passed = True
-            self.dut._log.info("Looping over {} vectors for {} iterations.".format(len(vector['loop_body']), vector['repeat']))
-            for i in range(vector['repeat']):
-                for loop_vector in vector['loop_body']:
+            self.dut._log.info(
+                "Looping over {} vectors for {} iterations.".format(
+                    len(vector["loop_body"]), vector["repeat"]
+                )
+            )
+            for i in range(vector["repeat"]):
+                for loop_vector in vector["loop_body"]:
                     passed &= await self.apply_vector(loop_vector)
-            return passed
+        return passed

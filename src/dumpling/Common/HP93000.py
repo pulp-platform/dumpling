@@ -1,7 +1,7 @@
 # Manuel Eggimann <meggimann@iis.ee.ethz.ch>
 #
 # Copyright (C) 2020-2022 ETH Zürich
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -15,13 +15,18 @@
 # limitations under the License.
 import re
 import textwrap
-from pathlib import Path
-from typing import Mapping, List, Iterator
+from pathlib import Path, PurePath
+from typing import Mapping, List, Iterator, Optional, Sequence, TextIO
 
-from dumpling.Common.VectorBuilder import VectorBuilder, Vector
+from dumpling.Common.VectorBuilder import (
+    MatchedLoopVector,
+    NormalVector,
+    VectorBuilder,
+    Vector,
+    PinDecl,
+)
 from mako.template import Template
-
-from Common.VectorBuilder import PinDecl
+import os
 
 
 class AVCPinDecl(PinDecl):
@@ -52,25 +57,30 @@ class HP93000VectorReader:
     """
 
     _matchers = {
-    'empty_line' : re.compile(r'^\s*$'),
-    'format_stmt' : re.compile(r'FORMAT\s+(?P<ports>(\w+(?:\s+|;))+)'),
-    'port_stmt' : re.compile(r'PORT\s+\w*\s*;'),
-    'normal_vec' : re.compile(r'R(?P<repeat>\d+)\s+(?P<dvc_name>\w*)\s+(?P<pin_state>\w+)\s+(?:\[%]\s*(?P<comment>.*);)?'),
-    'match_loop_begin' : re.compile(r'SQPG\s+MACT\s+(?P<retries>\d+)\s*;'),
-    'match_loop_idle_begin' : re.compile(r'SQPG\s+MRPT\s+(?P<idle_vectors>\d+)\s*;'),
-    'match_loop_end' : re.compile(r'SQPG\s+PADDING\s*;'),
-    'loop_begin' : re.compile(r'SQPG\s+LBGN\s+(?P<count>\d+)\s*;'),
-    'loop_end' : re.compile(r'SQPG\s+LEND\s*;')
+        "empty_line": re.compile(r"^\s*$"),
+        "format_stmt": re.compile(r"FORMAT\s+(?P<ports>(\w+(?:\s+|;))+)"),
+        "port_stmt": re.compile(r"PORT\s+\w*\s*;"),
+        "normal_vec": re.compile(
+            r"R(?P<repeat>\d+)\s+(?P<dvc_name>\w*)\s+(?P<pin_state>\w+)\s+(?:\[%]\s*(?P<comment>.*);)?"
+        ),
+        "match_loop_begin": re.compile(r"SQPG\s+MACT\s+(?P<retries>\d+)\s*;"),
+        "match_loop_idle_begin": re.compile(r"SQPG\s+MRPT\s+(?P<idle_vectors>\d+)\s*;"),
+        "match_loop_end": re.compile(r"SQPG\s+PADDING\s*;"),
+        "loop_begin": re.compile(r"SQPG\s+LBGN\s+(?P<count>\d+)\s*;"),
+        "loop_end": re.compile(r"SQPG\s+LEND\s*;"),
     }
 
-    def __init__(self, stimuli_file_path: Path, pins: Mapping[str, AVCPinDecl]):
+    def __init__(self, stimuli_file_path: os.PathLike, pins: Mapping[str, AVCPinDecl]):
         self.stimuli_file_path = stimuli_file_path
         self.pins = pins
         self.pin_order = None
-        self.physical_to_logical_map = {pin.get('avc_name', pin['name']): logical_name for logical_name, pin in pins.items()}
+        self.physical_to_logical_map = {
+            pin.get("avc_name", pin["name"]): logical_name
+            for logical_name, pin in pins.items()
+        }
 
     def __enter__(self):
-        self._file = self.stimuli_file_path.open('r')
+        self._file = open(self.stimuli_file_path, "r")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -96,32 +106,46 @@ class HP93000VectorReader:
             if not match:
                 raise ValueError("Could not parse line: {}".format(line))
 
-            if stm_type == 'empty_line':
+            if stm_type == "empty_line":
                 pass
-            elif stm_type == 'format_stmt':
-                self.pin_order = str.split(match.group('ports'))
-            elif stm_type == 'port_stmt':
-                pass #Ignore this statement
-            elif stm_type == 'normal_vec':
-                if self.pin_order: #Make sure we already read the format statement
-                    pin_state = {self.physical_to_logical_map[self.pin_order[i]]: value for i, value in enumerate(match.group('pin_state'))}
-                    yield {'type': 'vec', 'vector': pin_state, 'repeat': int(match.group('repeat')), 'comment': match.group('comment')}
+            elif stm_type == "format_stmt":
+                self.pin_order = str.split(match.group("ports"))
+            elif stm_type == "port_stmt":
+                pass  # Ignore this statement
+            elif stm_type == "normal_vec":
+                if self.pin_order:  # Make sure we already read the format statement
+                    pin_state = {
+                        self.physical_to_logical_map[self.pin_order[i]]: value
+                        for i, value in enumerate(match.group("pin_state"))
+                    }
+                    yield {
+                        "type": "vec",
+                        "vector": pin_state,
+                        "repeat": int(match.group("repeat")),
+                        "comment": match.group("comment"),
+                    }
                 else:
-                    raise ValueError("Encountered vector statement before reading format statement")
-            elif stm_type == 'match_loop_begin':
+                    raise ValueError(
+                        "Encountered vector statement before reading format statement"
+                    )
+            elif stm_type == "match_loop_begin":
                 condition_vectors = list(self.vectors())
                 idle_vectors = list(self.vectors())
-                yield {'type': 'match_loop', 'cond_vectors': condition_vectors, 'idle_vectors': idle_vectors, 'retries': int(match.group('retries'))}
-            elif stm_type == 'match_loop_idle_begin':
+                vector: MatchedLoopVector = {"type": "match_loop", "cond_vectors": condition_vectors, "idle_vectors": idle_vectors, "retries": int(match.group("retries"))}  # type: ignore
+                yield vector
+            elif stm_type == "match_loop_idle_begin":
                 return
-            elif stm_type == 'match_loop_end':
+            elif stm_type == "match_loop_end":
                 return
-            elif stm_type == 'loop_begin':
+            elif stm_type == "loop_begin":
                 body = list(self.vectors())
-                yield {'type': 'loop', 'loop_body': body, 'repeat': int(match.group('count'))}
-            elif stm_type == 'loop_end':
+                yield {
+                    "type": "loop",
+                    "loop_body": body,
+                    "repeat": int(match.group("count")),
+                }
+            elif stm_type == "loop_end":
                 return
-
 
 
 class HP93000VectorWriter:
@@ -154,9 +178,19 @@ class HP93000VectorWriter:
         wtb_name: The name of the wavetable to be associated with the AVC pattern file.
     """
 
-    def __init__(self, stimuli_file_path: Path, pins: Mapping[str, Mapping], port: str=None, device_cycle_name: str="dvc_1", wtb_name: str="Standard ATI"):
+    stimuli_file: Optional[TextIO]
+    stimuli_file_path: Path
+
+    def __init__(
+        self,
+        stimuli_file_path: os.PathLike,
+        pins: Mapping[str, Mapping],
+        port: Optional[str] = None,
+        device_cycle_name: str = "dvc_1",
+        wtb_name: str = "Standard ATI",
+    ):
         self.pins = pins
-        self.stimuli_file_path = stimuli_file_path
+        self.stimuli_file_path = Path(stimuli_file_path)
         self.stimuli_file = None
         self.port = port
         self.device_cycle_name = device_cycle_name
@@ -165,20 +199,23 @@ class HP93000VectorWriter:
         self._write_header()
 
     def __enter__(self):
-        self.stimuli_file = self.stimuli_file_path.open('a+')
+        self.stimuli_file = open(self.stimuli_file_path, "a+")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stimuli_file.close()
+        if self.stimuli_file:
+            self.stimuli_file.close()
 
     def _generate_wtb_and_tmf(self) -> None:
-        #Generate the WTB and TMF file in the same target directory as the stimuli file with the same stem
-        wtb_path = self.stimuli_file_path.with_suffix('.wtb')
-        tmf_path = self.stimuli_file_path.with_suffix('.tmf')
-        #Write the default wtb
+        # Generate the WTB and TMF file in the same target directory as the stimuli file with the same stem
+        wtb_path = self.stimuli_file_path.with_suffix(".wtb")
+        tmf_path = self.stimuli_file_path.with_suffix(".tmf")
+        # Write the default wtb
         wtb_path.write_text(self.wtb_name)
-        #Write the default tmf
-        wtb_template = Template(textwrap.dedent("""\
+        # Write the default tmf
+        wtb_template = Template(
+            textwrap.dedent(
+                """\
         PINS ${port_name}
         DDC ${device_cycle_name}
         0 0
@@ -186,10 +223,18 @@ class HP93000VectorWriter:
         X 2
         L 3
         H 4
-        Z 5"""))
-        tmf_path.write_text(wtb_template.render(port_name=self.port, device_cycle_name=self.device_cycle_name))
+        Z 5"""
+            )
+        )
+        tmf_path.write_text(
+            str(
+                wtb_template.render(
+                    port_name=self.port, device_cycle_name=self.device_cycle_name
+                )
+            )
+        )
 
-    def write_vectors(self, vectors: List[Vector], compress: bool = False) -> None:
+    def write_vectors(self, vectors: Sequence[Vector], compress: bool = False) -> None:
         """
         Append the given vectors to the vector file in AVC format.
 
@@ -207,31 +252,46 @@ class HP93000VectorWriter:
         Returns:
 
         """
+        assert self.stimuli_file
         if compress:
             vectors = VectorBuilder.compress_vectors(vectors)
         for vector in vectors:
-            if vector['type'] == 'vec':
-                pin_state_string = ''.join([str(vector['vector'][pin]) for pin in sorted(self.pins.keys())])
-                vector_line = "R{} {} {} ".format(vector['repeat'], self.device_cycle_name, pin_state_string)
-                if vector['comment'] and vector['comment'] != "":
-                    vector_line += "[%] " + vector['comment'] + " "
+            if vector["type"] == "vec":
+                pin_state_string = "".join(
+                    [str(vector["vector"][pin]) for pin in sorted(self.pins.keys())]
+                )
+                vector_line = "R{} {} {} ".format(
+                    vector["repeat"], self.device_cycle_name, pin_state_string
+                )
+                if vector["comment"] and vector["comment"] != "":
+                    vector_line += "[%] " + vector["comment"] + " "
                 vector_line += ";\n"
                 self.stimuli_file.write(vector_line)
-            elif vector['type'] == 'match_loop':
-                self.stimuli_file.write("SQPG MACT {} ;\n".format(vector['retries']))
-                self.write_vectors(vector['cond_vectors'])
-                self.stimuli_file.write("SQPG MRPT {} ;\n".format(len(vector['idle_vectors'])))
-                self.write_vectors(vector['idle_vectors'])
+            elif vector["type"] == "match_loop":
+                self.stimuli_file.write("SQPG MACT {} ;\n".format(vector["retries"]))
+                self.write_vectors(list(vector["cond_vectors"]))
+                self.stimuli_file.write(
+                    "SQPG MRPT {} ;\n".format(len(vector["idle_vectors"]))
+                )
+                self.write_vectors(list(vector["idle_vectors"]))
                 self.stimuli_file.write("SQPG PADDING ;\n")
-            elif vector['type'] == 'loop':
-                self.stimuli_file.write("SQPG LBGN {} ;\n".format(vector['repeat']))
-                self.write_vectors(vector['loop_body'])
+            elif vector["type"] == "loop":
+                self.stimuli_file.write("SQPG LBGN {} ;\n".format(vector["repeat"]))
+                self.write_vectors(vector["loop_body"])
                 self.stimuli_file.write("SQPG LEND ;\n")
             else:
-                raise ValueError("Got vector with unknown type {}".format(vector['type']))
+                raise ValueError(
+                    "Got vector with unknown type {}".format(vector["type"])
+                )
 
     def _write_header(self) -> None:
-        with self.stimuli_file_path.open(mode='w') as stimuli_file:
+        with self.stimuli_file_path.open(mode="w") as stimuli_file:
             if self.port:
                 stimuli_file.write("PORT " + self.port + " ;\n")
-            stimuli_file.write("FORMAT " + ' '.join([pin['name'] for logical_name, pin in sorted(self.pins.items())]) + " ;\n")
+            stimuli_file.write(
+                "FORMAT "
+                + " ".join(
+                    [pin["name"] for logical_name, pin in sorted(self.pins.items())]
+                )
+                + " ;\n"
+            )
