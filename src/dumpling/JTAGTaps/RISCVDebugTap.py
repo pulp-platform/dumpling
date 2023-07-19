@@ -29,6 +29,7 @@ import textwrap
 from typing import List, Literal, Optional, Union, overload
 
 import bitstring
+from tqdm import tqdm
 from bitstring import BitArray
 from dumpling.Common.ElfParser import ElfParser
 from dumpling.Common.Utilities import pp_binstr
@@ -735,7 +736,7 @@ class RISCVDebugTap(JTAGTap):
         """
         if comment is None:
             comment = ""
-        comment += "Verify register {} equals {}".format(reg, expected_data)
+        comment += "/Verify register {} equals {}".format(reg, expected_data)
 
         # Issue the read from register command
         cmd = DMAbstractCmd(
@@ -778,7 +779,7 @@ class RISCVDebugTap(JTAGTap):
 
         if comment is None:
             comment = ""
-        comment += "Verify register {} equals {}".format(reg, expected_data)
+        comment += "/Verify register {} equals {}".format(reg, expected_data)
 
         # Issue the read from register command
         cmd = DMAbstractCmd(
@@ -1355,15 +1356,16 @@ class RISCVDebugTap(JTAGTap):
             data_reg = DMRegAddress[f"SBDATA{idx}"]
             vectors += self.read_debug_reg_no_loop(
                 data_reg,
-                data_chunk,
+                data_chunk[::-1],
                 wait_cycles=wait_cycles,
-                comment=f"Reading data chunk from SBDATA{idx} register",
+                comment=f"Reading data chunk {data_chunk} from SBDATA{idx} register",
             )
         return vectors
 
     def set_sbcs(
         self,
-        sbreadonaddr: bool,
+        sbreadonaddr: bool = False,
+        sbreadondata: bool = False,
         sbautoincrement: bool = False,
         sbaccess: Literal[8, 16, 32, 64, 128] = 32,
         comment: Optional[str] = None,
@@ -1371,8 +1373,11 @@ class RISCVDebugTap(JTAGTap):
         """
         Set the systembus access control flags `sbreadonaddr`, `sbautoincrement` and `sbaccess`.
 
-        The `sbreadonaddr` flag is used to make the debug mode automatically issue a read whenever we change the
+        The `sbreadonaddr` flag is used to make the debug module automatically issue a read whenever we change the
         SBADDRESS0 register (e.g. by using one of the ``read_mem*`` commands).
+
+        The `sbreadondata` flag, if enabled, causes the debug module to automatically issue a SBA read whenever we read from
+        the SBDATA0 debug register.
 
         The `sbaccess` flag controls the transaction size for each system bus access. Not all access sizes are supported
         by all debug modules. Check your particular implementation (bits 0-4 of the SBCS register indicate which modes
@@ -1381,10 +1386,6 @@ class RISCVDebugTap(JTAGTap):
         The `sbautonincrement`, if enabled automatically increment the `SBADDRESS` registers by the transactions size
         (e.g. by 4 if sbaccess = 32-bit). This is usefull if we want to perform consecutive reads or writes without
         constantly updating the address manually.
-
-        Notes:
-            Since the read_mem functions assume the `sbreadonaddr` flag to be set, you have to call this function before issuing any
-            ``read_mem()`` or ``read_mem_no_loop()`` calls.
 
         Args:
             sbreadonaddr (bool): If True, the debug module will read on the system bus whenever we update SBADDRESS0
@@ -1403,9 +1404,10 @@ class RISCVDebugTap(JTAGTap):
         sbcs_value[20] = 1 if sbreadonaddr else 0
         sbcs_value[17:20] = sbaccess_mapping[sbaccess]
         sbcs_value[16] = 1 if sbautoincrement else 0
+        sbcs_value[15] = 1 if sbreadondata else 0
         if comment is None:
             comment = ""
-        comment += f"Set SBCS reg for subsequent reads to sbreadonaddr={sbreadonaddr} and sbautoincrement={sbautoincrement}."
+        comment += f"/Set SBCS reg for subsequent reads to sbreadonaddr={sbreadonaddr} and sbautoincrement={sbautoincrement}."
         return self.write_debug_reg(
             DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment=comment
         )
@@ -1483,7 +1485,7 @@ class RISCVDebugTap(JTAGTap):
         Returns:
             The list of generated vectors
         """
-        vectors: List[Vector] = list(self.set_sbcs(True))
+        vectors: List[Vector] = list(self.set_sbcs(sbreadonaddr=True))
 
         expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_eoc_value[31] = 1
@@ -1512,11 +1514,12 @@ class RISCVDebugTap(JTAGTap):
         )  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
-    def loadL2(
+    def load_elf(
         self,
         elf_binary: os.PathLike,
         wait_cycles: int = 0,
         word_width: Literal[8, 16, 32, 64, 128] = 32,
+        addr_width: Literal[32, 64, 128] = 32,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
         """
@@ -1528,7 +1531,9 @@ class RISCVDebugTap(JTAGTap):
         ELF binary sections to the memory. The wordwidth with which data is
         pushed into memory is configurable. However, support for different word
         widths depends on the particular debug module parameterization. Most
-        debug modules only support one word width.
+        debug modules only support one word width. Similarly, the address width must
+        be set to the actual address width of the system bus access port of your debug module,
+        which is a fixed value.
 
         By default, the function assumes that the System Bus access writes will
         be way faster than shifting in the next word to write. I.e. the writes
@@ -1546,6 +1551,7 @@ class RISCVDebugTap(JTAGTap):
             elf_binary: The ELF binary to preload into memory.
             wait_cycles: The number of JTAG idle cycles to wait between writes
             word_width: The word width with which to parse the ELF binary and to issue write transaction.
+            addr_width: The address width to use. The width must be either 32, 64 or 128 bit (pad to the next larger if necessary)
 
         Returns:
             The list of generated vectors
@@ -1564,11 +1570,11 @@ class RISCVDebugTap(JTAGTap):
             comment=comment,
         )
         prev_addr = None
-        for addr, word in sorted(stimuli.items()):
+        for addr, word in tqdm(sorted(stimuli.items())):
             if not prev_addr or prev_addr + 4 != int(addr):
                 # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
                 for idx, addr_chunk in reversed(
-                    list(enumerate(BitArray(addr, length=word_width).cut(32)))
+                    list(enumerate(BitArray(uint=int(addr), length=addr_width).cut(32)))
                 ):
                     addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
                     vectors += self.write_debug_reg(
@@ -1581,7 +1587,7 @@ class RISCVDebugTap(JTAGTap):
                 vectors += self.driver.jtag_idle_vectors(wait_cycles)
             prev_addr = int(addr)
             for idx, data_chunk in reversed(
-                list(enumerate(BitArray(int=word, length=128).cut(32)))
+                list(enumerate(BitArray(uint=word, length=word_width).cut(32)))
             ):
                 data_reg = DMRegAddress[f"SBDATA{idx}"]
                 vectors += self.write_debug_reg(
@@ -1607,11 +1613,12 @@ class RISCVDebugTap(JTAGTap):
 
         return vectors
 
-    def verifyL2(
+    def verify_elf(
         self,
         elf_binary: os.PathLike,
         wait_cycles: int = 0,
         word_width: Literal[8, 16, 32, 64, 128] = 32,
+            addr_width: Literal[32, 64, 128] = 32,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
         """
@@ -1641,6 +1648,7 @@ class RISCVDebugTap(JTAGTap):
             elf_binary: The ELF binary to preload into memory.
             wait_cycles: The number of JTAG idle cycles to wait between writes
             word_width: The word width with which to parse the ELF binary and to issue write transaction.
+            addr_width: The address width to use. The width must be either 32, 64 or 128 bit (pad to the next larger if necessary)
 
         Returns:
             The list of generated vectors
@@ -1654,16 +1662,17 @@ class RISCVDebugTap(JTAGTap):
         vectors: List[NormalVector] = []
         vectors += self.set_sbcs(
             sbreadonaddr=True,
+            sbreadondata=True,
             sbautoincrement=True,
             sbaccess=word_width,
             comment=comment,
         )
         prev_addr = None
-        for addr, word in sorted(stimuli.items()):
+        for addr, word in tqdm(sorted(stimuli.items())):
             if not prev_addr or prev_addr + 4 != int(addr):
                 # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
                 for idx, addr_chunk in reversed(
-                    list(enumerate(BitArray(addr, length=word_width).cut(32)))
+                    list(enumerate(BitArray(uint=int(addr), length=addr_width).cut(32)))
                 ):
                     addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
                     vectors += self.write_debug_reg(
@@ -1676,7 +1685,7 @@ class RISCVDebugTap(JTAGTap):
                 vectors += self.driver.jtag_idle_vectors(wait_cycles)
             prev_addr = int(addr)
             for idx, data_chunk in reversed(
-                list(enumerate(BitArray(int=word, length=128).cut(32)))
+                list(enumerate(BitArray(uint=word, length=word_width).cut(32)))
             ):
                 data_reg = DMRegAddress[f"SBDATA{idx}"]
                 vectors += self.read_debug_reg_no_loop(

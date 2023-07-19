@@ -223,7 +223,7 @@ def execute_elf(
                 wait_cycles=eoc_wait_cycles,
                 comment="Verify the content of L2 to match the binary.",
             )
-            vector_writer.write_vectors(vectors)
+            vector_writer.write_vectors(vectors, compress=compress)
 
         # Resume core
         vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS

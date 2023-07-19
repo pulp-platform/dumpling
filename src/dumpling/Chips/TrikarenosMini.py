@@ -209,7 +209,7 @@ def execute_elf(
 
         # Load L2 memory
         # vectors = pulp_tap.init_pulp_tap()
-        vectors += riscv_debug_tap.loadL2(elf_binary=elf)
+        vectors += riscv_debug_tap.load_elf(elf_binary=elf)
         vector_writer.write_vectors(vectors, compress=compress)
 
         # Optionally verify the data we just wrote to L2
