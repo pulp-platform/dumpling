@@ -319,8 +319,8 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.write32(
-                    BitArray(uint=start_addr, length=32),
-                    burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    BitArray(uint=start_addr, length=32),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    burst_data,
                     comment=comment,
                 )
                 start_addr = int(addr)
@@ -382,8 +382,8 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.read32_no_loop(
-                    BitArray(uint=start_addr, length=32),
-                    burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    BitArray(uint=start_addr, length=32),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    burst_data,
                     wait_cycles=wait_cycles,
                     comment=comment,
                 )

@@ -21,9 +21,11 @@ See the documentation of ``JTAGDriver`` for an example.
 
 """
 
+import enum
 import os
 import re
 from enum import Enum
+import textwrap
 from typing import List, Literal, Optional, Union, overload
 
 import bitstring
@@ -907,7 +909,6 @@ class RISCVDebugTap(JTAGTap):
                 repeat=wait_cycles, comment="Waiting for core to halt"
             )
         ]
-        # breakpoint()
         expected_dm_status: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         mask: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_dm_status[9] = 1  # 1 #All halted
@@ -1127,7 +1128,13 @@ class RISCVDebugTap(JTAGTap):
         comment: Optional[str] = None,
     ) -> Union[List[Vector], List[NormalVector]]:
         """
-        Write to a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+        Write to a single memory location using the "system bus access" (SBA) feature of the debug module.
+
+        The width of ``addr`` must match the width of the System Bus connected to your debug module. The parametrized bus width can be queried
+        from the debug module by checking bits 5-11 (field sbasize) of the SBCS debug register. Similarly, the width of the data determines the
+        access mode used by this function. The width must be either 8, 16, 32, 64 or 128 bits. The function will write both, data and address to the
+        corresponding SBADDRESS[0-3] and SBDATA[0-3] registers and enables the correct access size by reconfiguring the SBCS register to the right
+        access size. Keep in mind, that your debug module must support the chosen address and data width. You cannot arbitrarily choose it.
 
         Notes:
                If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
@@ -1135,32 +1142,53 @@ class RISCVDebugTap(JTAGTap):
                should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
                completion and thus not issue any matched loops.
 
+               If your system bus *address* width is not an exact power of two (between 8 and 128) you have to pad your address
+               vector to the next larger power of two. Non-power-of-two data widths are not supported in the RISC-V debug
+               specification.
+
         Args:
-            addr: The address to read from
-            data: The 32-bit data to write to the memory location.
+            addr: The address to read from. The width must either 32, 64 or 128 bit (pad to the next larger if necessary)
+            data: The data to write to the memory location. The width must be 8, 16, 32, 64 or 128 bit.
             retries: The number of times to poll the DTMCSR register for the operation to complete.
             comment: An optional comment to provide context for these vectors.
 
         Returns:
-
+            The list of generated vectors
         """
         if comment is None:
             comment = ""
         comment += "/Writing {} to memory @{}".format(pp_binstr(data), pp_binstr(addr))
-        vectors = self.write_debug_reg(
-            DMRegAddress.SBADDRESS0,
-            addr.bin,
-            verify_completion=verify_completion,
-            retries=retries,
-            comment=comment,
-        )
-        vectors += self.write_debug_reg(
-            DMRegAddress.SBDATA0,
-            data.bin,
-            verify_completion=verify_completion,
-            retries=retries,
-            comment=comment,
-        )
+        assert len(addr) in [32, 64, 128]
+        assert len(data) in [8, 16, 32, 64, 128]
+
+        # Pad the data to at least 32 bit, so the chunking operation below will produce always 32-bit chunks
+        if len(data) < 32:
+            data = f"0b{(32-len(data))*'0'}" + data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+
+        # Configure the debug module to use the correct access size.
+        vectors = self.set_sbcs(sbreadonaddr=False, sbautoincrement=False, sbaccess=len(data))  # type: ignore
+
+        # Write the address in chunks of 32-bit starting from the most significant chunk
+        for idx, addr_chunk in reversed(list(enumerate(addr.cut(32)))):
+            addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
+            vectors += self.write_debug_reg(
+                addr_reg,
+                addr_chunk.bin,
+                verify_completion=verify_completion,
+                retries=retries,
+                comment=f"Writing address chunk to SBADDRESS{idx} register",
+            )
+        # Write the data in chunks of 32-bit starting from the most significant chunk. Writing to the last reg
+        # (SBDATA0) will trigger the actual SBA write.
+        for idx, data_chunk in reversed(list(enumerate(data.cut(32)))):
+            data_reg = DMRegAddress[f"SBDATA{idx}"]
+            vectors += self.write_debug_reg(
+                data_reg,
+                data_chunk.bin,
+                verify_completion=verify_completion,
+                retries=retries,
+                comment=f"Writing data to chunk to SBDATA{idx} register",
+            )
         return vectors
 
     def readMem(
@@ -1171,23 +1199,44 @@ class RISCVDebugTap(JTAGTap):
         comment: Optional[str] = None,
     ) -> List[Vector]:
         """
-        Read from a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+        Read from a single memory location using the "system bus access" (SBA) feature of the debug module.
+
+        The width of ``addr`` must match the width of the System Bus connected to your debug module. The parametrized bus width can be queried
+        from the debug module by checking bits 5-11 (field sbasize) of the SBCS debug register. Similarly, the width of the data determines the
+        access mode used by this function. The width must be either 8, 16, 32, 64 or 128 bits. The function will write the address to the
+        corresponding SBADDRESS[0-3] register and match the data read from the SBDATA[0-3] registers. To that end, this function  enables the
+        correct access size by reconfiguring the SBCS register to the right access size and also enables the `sbreadonaddr` flag.
+
+        Keep in mind, that your debug module must support the chosen address and data width. You cannot arbitrarily choose it.
 
         Notes:
             This version of the command uses matched loops to poll for command completion with up to `retries` number of
             tries before failling. Since Matched loops can cause lots of issues in your vector setup, you should avoid them
             at all costs. Use the `_no_loop` version of this command instead to wait for a fixed number of idle cycles instead.
 
+            If your system bus *address* width is not an exact power of two (between 8 and 128) you have to pad your address
+            vector to the next larger power of two. Non-power-of-two data widths are not supported in the RISC-V debug
+            specification.
+
         Args:
-            addr: The address to read from
-            expected_data: The 32-bit data to match against the read data. Use the letter 'x' for don't care bits.
+            addr: The address to read from. The width must either 32, 64 or 128 bit (pad to the next larger if necessary)
+            expected_data: The data to match against the read data. Use the letter 'x' for don't care bits. The width must be 8, 16, 32, 64 or 128 bit.
             retries: The number of times to poll the DTMCSR register for the operation to complete before matching against
                 the read-back data.
             comment: An optional comment to provide context for these vectors.
 
         Returns:
-
+            The list of generated vectors
         """
+        assert len(addr) in [32, 64, 128]
+        assert len(expected_data) in [8, 16, 32, 64, 128]
+
+        # Pad the expected data to at least 32 bit, so the chunking operation below will produce always 32-bit chunks
+        if len(expected_data) < 32:
+            if isinstance(expected_data, BitArray):
+                expected_data = expected_data.bin
+            expected_data = (32 - len(expected_data)) * "x" + expected_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+
         if isinstance(expected_data, BitArray):
             expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
@@ -1203,12 +1252,29 @@ class RISCVDebugTap(JTAGTap):
         comment += "/Reading from systembus @{} expecting {}".format(
             pp_binstr(addr), expected_data_repr
         )
-        vectors = self.write_debug_reg(
-            DMRegAddress.SBADDRESS0, addr.bin, retries=retries, comment=comment
-        )
-        vectors += self.read_debug_reg(
-            DMRegAddress.SBDATA0, expected_data, retries=retries
-        )
+        # Enable read on address write and set the correct access size.
+        vectors: List[Vector] = self.set_sbcs(sbreadonaddr=True, sbautoincrement=False, sbaccess=len(data))  # type: ignore
+
+        # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
+        for idx, addr_chunk in reversed(list(enumerate(addr.cut(32)))):
+            addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
+            vectors += self.write_debug_reg(
+                addr_reg,
+                addr_chunk.bin,
+                retries=retries,
+                comment=f"Writing address chunk to SBADDRESS{idx} register",
+            )
+        # Read the data register in chunks of 32-bit starting from the most significant chunk.
+        for idx, data_chunk in reversed(
+            list(enumerate(textwrap.wrap(expected_data[::-1], width=32)))
+        ):
+            data_reg = DMRegAddress[f"SBDATA{idx}"]
+            vectors += self.read_debug_reg(
+                data_reg,
+                data_chunk,
+                retries=retries,
+                comment=f"Reading data chunk from SBDATA{idx} register",
+            )
         return vectors
 
     def readMem_no_loop(
@@ -1219,25 +1285,44 @@ class RISCVDebugTap(JTAGTap):
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
         """
-        Read from a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+        Read from a single memory location using the "system bus access" (SBA) feature of the debug module.
+
+        The width of ``addr`` must match the width of the System Bus connected to your debug module. The parametrized bus width can be queried
+        from the debug module by checking bits 5-11 (field sbasize) of the SBCS debug register. Similarly, the width of the data determines the
+        access mode used by this function. The width must be either 8, 16, 32, 64 or 128 bits. The function will write the address to the
+        corresponding SBADDRESS[0-3] register and match the data read from the SBDATA[0-3] registers. To that end, this function  enables the
+        correct access size by reconfiguring the SBCS register to the right access size and also enables the `sbreadonaddr` flag.
+
+        Keep in mind, that your debug module must support the chosen address and data width. You cannot arbitrarily choose it.
 
         This version of the command does not use matched loops but wait for a configurable number of JTAG idle cycles.
 
         Notes:
-            You have to enable the readonaddr flag of the debug module before issuing readMem commands.
+            If your system bus *address* width is not an exact power of two (between 8 and 128) you have to pad your address
+            vector to the next larger power of two. Non-power-of-two data widths are not supported in the RISC-V debug
+            specification.
 
         Args:
-            addr: The address to read from
-            expected_data: The 32-bit data to match against the read data. Use the letter 'x' for don't care bits.
+            addr: The address to read from. The width must either 32, 64 or 128 bit (pad to the next larger if necessary)
+            expected_data: The data to match against the read data. Use the letter 'x' for don't care bits. The width must be 8, 16, 32, 64 or 128 bit.
             wait_cycles: The number of JTAG Idle cycles to wait for the read operation to complete
             comment: An optional comment to provide context for these vectors
 
         Returns:
             The list of generated vectors
         """
+        assert len(addr) in [32, 64, 128]
+        assert len(expected_data) in [8, 16, 32, 64, 128]
+
+        # Pad the expected data to at least 32 bit, so the chunking operation below will produce always 32-bit chunks
+        if len(expected_data) < 32:
+            if isinstance(expected_data, BitArray):
+                expected_data = expected_data.bin
+            expected_data = (32 - len(expected_data)) * "x" + expected_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+
         if isinstance(expected_data, BitArray):
-            expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
+            expected_data = expected_data.bin
         else:
             if re.fullmatch(r"[01]+", expected_data):
                 expected_data_repr = pp_binstr(BitArray(expected_data))
@@ -1250,31 +1335,73 @@ class RISCVDebugTap(JTAGTap):
         comment += (
             f"/Reading from systembus @0x{addr.hex} expecting 0x{expected_data_repr}"
         )
-        vectors = self.write_debug_reg(
-            DMRegAddress.SBADDRESS0, addr.bin, verify_completion=False, comment=comment
-        )
-        vectors += [
-            self.driver.jtag_idle_vector(
-                repeat=wait_cycles,
-                comment="Wait for a few cylces to let the bus transaction complete",
+
+        # Enable read on address write and set the correct access size.
+        vectors: List[NormalVector] = self.set_sbcs(sbreadonaddr=True, sbautoincrement=False, sbaccess=len(expected_data))  # type: ignore
+
+        # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
+        for idx, addr_chunk in reversed(list(enumerate(addr.cut(32)))):
+            addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
+            vectors += self.write_debug_reg(
+                addr_reg,
+                addr_chunk.bin,
+                verify_completion=False,
+                comment=f"Writing address chunk to SBADDRESS{idx} register",
             )
-        ]
-        vectors += self.read_debug_reg_no_loop(
-            DMRegAddress.SBDATA0, expected_data, wait_cycles=wait_cycles
-        )
+        # Read the data register in chunks of 32-bit starting from the most significant chunk.
+        for idx, data_chunk in reversed(
+            list(enumerate(textwrap.wrap(expected_data[::-1], width=32)))
+        ):
+            data_reg = DMRegAddress[f"SBDATA{idx}"]
+            vectors += self.read_debug_reg_no_loop(
+                data_reg,
+                data_chunk,
+                wait_cycles=wait_cycles,
+                comment=f"Reading data chunk from SBDATA{idx} register",
+            )
         return vectors
 
     def set_sbcs(
         self,
         sbreadonaddr: bool,
         sbautoincrement: bool = False,
+        sbaccess: Literal[8, 16, 32, 64, 128] = 32,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
+        """
+        Set the systembus access control flags `sbreadonaddr`, `sbautoincrement` and `sbaccess`.
+
+        The `sbreadonaddr` flag is used to make the debug mode automatically issue a read whenever we change the
+        SBADDRESS0 register (e.g. by using one of the ``read_mem*`` commands).
+
+        The `sbaccess` flag controls the transaction size for each system bus access. Not all access sizes are supported
+        by all debug modules. Check your particular implementation (bits 0-4 of the SBCS register indicate which modes
+        are supported by a particular implementation).
+
+        The `sbautonincrement`, if enabled automatically increment the `SBADDRESS` registers by the transactions size
+        (e.g. by 4 if sbaccess = 32-bit). This is usefull if we want to perform consecutive reads or writes without
+        constantly updating the address manually.
+
+        Notes:
+            Since the read_mem functions assume the `sbreadonaddr` flag to be set, you have to call this function before issuing any
+            ``read_mem()`` or ``read_mem_no_loop()`` calls.
+
+        Args:
+            sbreadonaddr (bool): If True, the debug module will read on the system bus whenever we update SBADDRESS0
+            sbautoincrement (bool, optional): If true, the system bus will autoincrement the SBADDRESS0 by 4 on every
+                read or write to the system bus.
+            sbaccess (Literal[8, 16, 32, 64, 128]): The access for system bus transactions. Not all sizes are supported by all debug modules.
+            comment (Optional[str], optional): An optional comment to provide context to the vectors.
+
+        Returns:
+            List[NormalVector]: The list of generated vectors
+        """
         # Set sbcs by writing appropriate values to SBCS register
+        sbaccess_mapping = {8: 0, 16: 1, 32: 2, 64: 3, 128: 4}
         sbcs_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         sbcs_value[29:32] = 1
         sbcs_value[20] = 1 if sbreadonaddr else 0
-        sbcs_value[17:20] = 2
+        sbcs_value[17:20] = sbaccess_mapping[sbaccess]
         sbcs_value[16] = 1 if sbautoincrement else 0
         if comment is None:
             comment = ""
@@ -1286,7 +1413,29 @@ class RISCVDebugTap(JTAGTap):
     def check_end_of_computation(
         self, expected_return_code: int, wait_cycles=10, eoc_reg_addr="0x1a1040a0"
     ):
-        vectors = self.set_sbcs(True)
+        """
+        Check for end of computation in common PULP chips.
+
+        The function performs a read operation on the specified address and matches the expected return value. The
+        expected encoding of this 32-bit memory location (which is used by many pulp chips) is the following::
+
+            bits[30:0] = expected_return_code[30:0]
+            bits[31] = 1 # Bit 31 being '1' indicates the end of computation
+
+        Notes:
+            This function internally enables the `sbreadonaddr` flag (by calling ``set_sbc()``. Remember to disable it
+            in case this is no longer desired after checking for end of computation.
+
+        Args:
+            expected_return_code: The expected return code
+            wait_cycles: The number of cycles to wait between issuing the read operation and reading the result.
+            eoc_reg_addr: The address of the end-of-computation register/memory location.
+
+        Returns:
+            The list of generated vectors
+
+        """
+        vectors = self.set_sbcs(sbreadonaddr=True)
 
         expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_eoc_value[31] = 1
@@ -1308,6 +1457,32 @@ class RISCVDebugTap(JTAGTap):
         wait_cycles: int = 10,
         eoc_reg_addr: str = "0x1a1040a0",
     ) -> List[Vector]:
+        """
+        Wait for end of computation in common PULP chips using a matched loop.
+
+        The function performs a read operations on the specified address and matches the expected return value. The
+        expected encoding of this 32-bit memory location (which is used by many pulp chips) is the following::
+
+            bits[30:0] = expected_return_code[30:0]
+            bits[31] = 1 # Bit 31 being '1' indicates the end of computation
+
+        Notes:
+            This version of the command uses matched loops to poll for end of computation with up to `retries` number of
+            tries before failing. Since Matched loops can cause lots of issues in your vector setup, you should avoid them
+            at all costs. Use the `check_end_of_computation`() function instead after you waited for a sufficient number of
+            JTAG Idle cycles for the computation to complete (e.g. with the ``jtag_idle()`` function from the ``JTAGDriver``
+            instance).
+
+        Args:
+            expected_return_code: The expected return code
+            idle_vector_count: The number of JTAG idle vectors to wait between each unsuccesful poll
+            max_retries: The number of polls on the EOC memory location in the matched loop.
+            wait_cycles: The number of JTAG idle vectors to wait between issuing the read operation and shifting out the result.
+            eoc_reg_addr: The address of the end-of-computation register/memory location.
+
+        Returns:
+            The list of generated vectors
+        """
         vectors: List[Vector] = list(self.set_sbcs(True))
 
         expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
@@ -1337,29 +1512,181 @@ class RISCVDebugTap(JTAGTap):
         )  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
-    def loadL2(self, elf_binary: os.PathLike, comment: Optional[str] = None):
+    def loadL2(
+        self,
+        elf_binary: os.PathLike,
+        wait_cycles: int = 0,
+        word_width: Literal[8, 16, 32, 64, 128] = 32,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
+        """
+        Preload the specified ELF binary into memory using the debug modules
+        System Bus Access feature.
+
+        This function puts the debug module in auto-increment modue (by
+        internally issuing the ``set_sbcs()`` function) and writes all loadable
+        ELF binary sections to the memory. The wordwidth with which data is
+        pushed into memory is configurable. However, support for different word
+        widths depends on the particular debug module parameterization. Most
+        debug modules only support one word width.
+
+        By default, the function assumes that the System Bus access writes will
+        be way faster than shifting in the next word to write. I.e. the writes
+        to the `SBDATA0` register are performed back-to-back. If your system is
+        clocked to slow or if you have a very long latency for write to
+        complete, you will have to increase the ``wait_cycles`` parameter to
+        insert JTAG idle cycles to wait for the previous write to complete
+        before issuing the next one.
+
+        Notes:
+            This function does not use any matched loop vectors.
+
+
+        Args:
+            elf_binary: The ELF binary to preload into memory.
+            wait_cycles: The number of JTAG idle cycles to wait between writes
+            word_width: The word width with which to parse the ELF binary and to issue write transaction.
+
+        Returns:
+            The list of generated vectors
+        """
+        if comment is None:
+            comment = ""
+        comment += "/Preloading ELF binary into memory"
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
-        stimuli = stim_generator.parse_binaries(4)
-        vectors = []
-        vectors += self.set_sbcs(False, True, comment)
+        stimuli = stim_generator.parse_binaries(word_width=word_width // 8)
+        vectors: List[NormalVector] = []
+        vectors += self.set_sbcs(
+            sbreadonaddr=False,
+            sbautoincrement=True,
+            sbaccess=word_width,
+            comment=comment,
+        )
         prev_addr = None
         for addr, word in sorted(stimuli.items()):
             if not prev_addr or prev_addr + 4 != int(addr):
-                vectors += self.write_debug_reg(
-                    DMRegAddress.SBADDRESS0,
-                    BitArray(addr).bin,
-                    verify_completion=False,
-                    comment="Writing start address",
-                )
+                # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
+                for idx, addr_chunk in reversed(
+                    list(enumerate(BitArray(addr, length=word_width).cut(32)))
+                ):
+                    addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
+                    vectors += self.write_debug_reg(
+                        addr_reg,
+                        addr_chunk.bin,
+                        verify_completion=False,
+                        comment=f"Writing address chunk to SBADDRESS{idx} register",
+                    )
+            if wait_cycles > 0:
+                vectors += self.driver.jtag_idle_vectors(wait_cycles)
             prev_addr = int(addr)
-            vectors += self.write_debug_reg(
-                DMRegAddress.SBDATA0,
-                BitArray(word).bin,
-                verify_completion=False,
-                comment="Writing data",
-            )
+            for idx, data_chunk in reversed(
+                list(enumerate(BitArray(int=word, length=128).cut(32)))
+            ):
+                data_reg = DMRegAddress[f"SBDATA{idx}"]
+                vectors += self.write_debug_reg(
+                    data_reg,
+                    data_chunk.bin,
+                    verify_completion=False,
+                    comment=f"Writing data to chunk to SBDATA{idx} register",
+                )
+        # Check if the writes where successful. Since the busyerror bit in DTMCS is sticky, a failure
+        # in any previous write will be visible with this final check.
+        if wait_cycles > 0:
+            vectors += self.driver.jtag_idle_vectors(wait_cycles)
+        vectors += self.set_dmi(
+            DMIOp.NOP,
+            DMRegAddress.NO_REG,
+            32 * "0",
+            DMIResult.OP_SUCCESS,
+            comment=comment + "/Check if all write operations where successful",
+        )
 
-        vectors += self.set_sbcs(True, False)
+        # Disable autoincrement and re-enable sbreadonaddr
+        vectors += self.set_sbcs(sbreadonaddr=True, sbautoincrement=False)
+
+        return vectors
+
+    def verifyL2(
+        self,
+        elf_binary: os.PathLike,
+        wait_cycles: int = 0,
+        word_width: Literal[8, 16, 32, 64, 128] = 32,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
+        """
+        Verifies the content of the memory to match the data of the specified ELF binary using reads over Debug Module
+        System Bus Access.
+
+        This function puts the debug module in auto-increment, auto-read mode (by
+        internally issuing the ``set_sbcs()`` function) and reads/matches all loadable
+        ELF binary sections from memory. The wordwidth with which data is
+        read from memory is configurable. However, support for different word
+        widths depends on the particular debug module parameterization. Most
+        debug modules only support one word width.
+
+        By default, the function assumes that the System Bus access reads will
+        be way faster than shifting in out the next word to read. I.e. the reads
+        from the `SBDATA0` register are performed back-to-back. If your system is
+        clocked to slow or if you have a very long latency for reads to
+        complete, you will have to increase the ``wait_cycles`` parameter to
+        insert JTAG idle cycles to wait for the previous read to complete
+        before issuing the next one.
+
+        Notes:
+            This function does not use any matched loop vectors.
+
+
+        Args:
+            elf_binary: The ELF binary to preload into memory.
+            wait_cycles: The number of JTAG idle cycles to wait between writes
+            word_width: The word width with which to parse the ELF binary and to issue write transaction.
+
+        Returns:
+            The list of generated vectors
+        """
+        if comment is None:
+            comment = ""
+        comment += "/Verifying memory to match ELF binary"
+        stim_generator = ElfParser(verbose=False)
+        stim_generator.add_binary(elf_binary)
+        stimuli = stim_generator.parse_binaries(word_width=word_width // 8)
+        vectors: List[NormalVector] = []
+        vectors += self.set_sbcs(
+            sbreadonaddr=True,
+            sbautoincrement=True,
+            sbaccess=word_width,
+            comment=comment,
+        )
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
+            if not prev_addr or prev_addr + 4 != int(addr):
+                # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
+                for idx, addr_chunk in reversed(
+                    list(enumerate(BitArray(addr, length=word_width).cut(32)))
+                ):
+                    addr_reg = DMRegAddress[f"SBADDRESS{idx}"]
+                    vectors += self.write_debug_reg(
+                        addr_reg,
+                        addr_chunk.bin,
+                        verify_completion=False,
+                        comment=f"Writing address chunk to SBADDRESS{idx} register",
+                    )
+            if wait_cycles > 0:
+                vectors += self.driver.jtag_idle_vectors(wait_cycles)
+            prev_addr = int(addr)
+            for idx, data_chunk in reversed(
+                list(enumerate(BitArray(int=word, length=128).cut(32)))
+            ):
+                data_reg = DMRegAddress[f"SBDATA{idx}"]
+                vectors += self.read_debug_reg_no_loop(
+                    data_reg,
+                    data_chunk.bin,
+                    wait_cycles=wait_cycles,
+                    comment=f"Reading data from the SBDATA{idx} register",
+                )
+
+        # Disable autoincrement and keep sbreadonaddr enabled
+        vectors += self.set_sbcs(sbreadonaddr=True, sbautoincrement=False)
 
         return vectors
