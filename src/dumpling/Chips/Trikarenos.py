@@ -17,6 +17,7 @@ import math
 import re
 from pathlib import Path
 from collections import namedtuple
+from typing import Mapping
 
 import bitstring
 import click
@@ -26,20 +27,22 @@ from bitstring import BitArray
 bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
 from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
-from dumpling.Common.VectorBuilder import VectorBuilder
+from dumpling.Common.VectorBuilder import PinDecl, VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
 # Pin Setup
-pins = {
-    "chip_reset": {"name": "reset_n", "default": "1"},
-    "trst": {"name": "jtag_trst", "default": "1"},
-    "tms": {"name": "jtag_tms", "default": "0"},
-    "tck": {"name": "jtag_tck", "default": "0"},
-    "tdi": {"name": "jtag_tdi", "default": "0"},
-    "tdo": {"name": "jtag_tdo", "default": "X"},
+
+pins: Mapping[str, PinDecl] = {
+    "chip_reset": {"name": "reset_n", "default": "1", "type": "input"},
+    "trst": {"name": "jtag_trst", "default": "1", "type": "input"},
+    "tms": {"name": "jtag_tms", "default": "0", "type": "input"},
+    "tck": {"name": "jtag_tck", "default": "0", "type": "input"},
+    "tdi": {"name": "jtag_tdi", "default": "0", "type": "input"},
+    "tdo": {"name": "jtag_tdo", "default": "X", "type": "output"},
 }
-FC_CORE_ID = BitArray("0x003e0")
+
+FC_CORE_ID: BitArray = BitArray("0x003e0")  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
 
 # GPIO Functional Modes?
 
@@ -194,7 +197,7 @@ def execute_elf(
         entry_address = BitArray(int=parser.get_entry(), length=32)
         vectors = riscv_debug_tap.write_reg_abstract_cmd_no_loop(
             RISCVReg.CSR_DPC,
-            BitArray(entry_address),
+            BitArray(entry_address),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
             comment="Writing boot address to DPC",
         )
         vector_writer.write_vectors(vectors, compress=compress)
