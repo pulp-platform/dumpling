@@ -13,15 +13,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+""" Provides the ``RISCVDebugTap`` class for high level interaction with RISC-V debug spec compliant JTAG debug transport modules.
+
+In order to use the ``RISCVDebugTap``, you will have to instantiate it and register it with your ``JTAGDriver`` instance.
+See the documentation of ``JTAGDriver`` for an example.
+
+"""
+
+import re
 from enum import Enum
 from typing import List, Literal, Optional, Union, overload
 
 import bitstring
-from dumpling.Common.Utilities import pp_binstr
-from dumpling.Common.VectorBuilder import VectorBuilder, Vector, NormalVector
-from dumpling.Drivers.JTAG import JTAGDriver, JTAGRegister, JTAGTap
 from bitstring import BitArray
-import re
+from dumpling.Common.Utilities import pp_binstr
+from dumpling.Common.VectorBuilder import NormalVector, Vector, VectorBuilder
+from dumpling.Drivers.JTAG import JTAGDriver, JTAGRegister, JTAGTap
 
 bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 
@@ -195,6 +203,13 @@ class DMAbstractCmd:
 
 
 class RISCVDebugTap(JTAGTap):
+    """A JTAG Tap implementation for the RISC-V JTAG Debug Transport Module
+    
+    This class implements functions to interact with a RISC-V debug
+    specification compliant debug module. It has been tested with the PULP
+    implementation of the debug module.
+    """
+    
     def __init__(self, driver: JTAGDriver, idcode: str = "0x249511C3"):
         super().__init__("RISC-V debug module", 5, driver)
         # Add JTAG registers
@@ -215,6 +230,11 @@ class RISCVDebugTap(JTAGTap):
         )
 
     def init_dmi(self) -> List[NormalVector]:
+        """Initialize the debug module interface by setting this TAP's IR to the DMIACCESS register.
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         return self.driver.jtag_set_ir(
             self,
             self.reg_soc_dmiaccess.IR_value,
@@ -230,6 +250,23 @@ class RISCVDebugTap(JTAGTap):
         expected_dm_data: Optional[str] = None,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
+        """Start a DMIACCESS operation
+
+        Perform a read or write operation to one of the DM's registers through the DMIACCESS JTAG register. 
+
+        Args:
+            dm_op (DMIOp): The operation to perform
+            dmi_addr (DMRegAddress): The DM register to access
+            new_dm_data (str): Data to be written into the DM register
+            expected_dm_status (Optional[DMIResult], optional): The (optional) expected status of the status bits when
+                shifting out DMACCESS. Use the letter 'x' for don't care bits.. Defaults to None.
+            expected_dm_data (Optional[str], optional): The (optional) expected data of the shifted out from DMACCESS.
+                Use the letter 'x' for don't care bits.  Defaults to None.
+            comment (Optional[str], optional): An optional comment to provide context for this vector. Defaults to None.
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         if comment is None:
             comment = ""
         comment += "/Start DMI access with OP {} to register {}.".format(
@@ -248,6 +285,15 @@ class RISCVDebugTap(JTAGTap):
     def wait_command(
         self, retries: int = 1, comment: Optional[str] = None
     ) -> List[Vector]:
+        """Wait for a previous DMIACCESS command to complete
+
+        Args:
+            retries (int, optional): The number of retires in the matched loop before the access is considered to have failed. Defaults to 1.
+            comment (Optional[str], optional): An optional comment to provide context. Defaults to None.
+
+        Returns:
+            List[Vector]: The generated vectors
+        """
         if comment is None:
             comment = ""
         comment += "/Wait for abstract command completion"
@@ -310,7 +356,11 @@ class RISCVDebugTap(JTAGTap):
         return vectors
 
     def dmi_reset(self) -> List[NormalVector]:
-        # Set the dmireset flag in DTMCS
+        """Reset the debug interface by asserting the debug reset flag in the DTMCS register.
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         dr_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         dr_value[16] = 1
         dr_value = dr_value.bin
@@ -321,12 +371,27 @@ class RISCVDebugTap(JTAGTap):
         return vectors
 
     def dmi_hardreset(self) -> List[NormalVector]:
+        """Hard reset the SoC asserting the hardreset flag in the DTMCS register.
+
+        This only works, if the debug module's hard reset line is actually connected to the SoC's reset generation logic (not the case in many PULP chips).
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         dr_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         dr_value[17] = 1
         value: str = dr_value.bin
         return self.driver.jtag_set_dr(self, value, "Hardreset DMI")
 
     def set_dmactive(self, dmactive: bool) -> List[NormalVector]:
+        """Enable/Disable the debug module by setting the DMACTIVE bit in the DMCONTROL register.
+
+        Args:
+            dmactive (bool): `True` to enable the debug module, `False` to disable it.
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         return self.set_dmi(
             DMIOp.WRITE,
             DMRegAddress.DMCONTROL,
@@ -341,6 +406,21 @@ class RISCVDebugTap(JTAGTap):
         wait_cycles: int = 0,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
+        """Read from a debug reg through a DMIACCESS command without using matched loop vectors.
+
+        This command just waits for the configured number of ``wait_cycles`` for the DMIACCESS operation to complete. If
+        the operation takes longer than that, the busy error flag will be asserted when checking the DMI status and the
+        operation will be considered failing. If the vectors fail for your chip, try increasing the wait cycles.
+
+        Args:
+            dmi_addr (DMRegAddress): The DM register to read from.
+            expected_data (str): The expected read data to match. Use the letter 'x' for don't care bits.
+            wait_cycles (int, optional): The number of cycles to wait for the read operation to complete. Defaults to 0.
+            comment (Optional[str], optional): An optional comment to provide context. Defaults to None.
+
+        Returns:
+            List[NormalVector]: The generated vectors
+        """
         if comment is None:
             comment = ""
         comment += "/Verify debug reg {} to be 0b{}.".format(dmi_addr, expected_data)
@@ -377,6 +457,20 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> List[Vector]:
+        """Read from a debug register using a DMIACCESS operation.
+
+        This version of the function uses a matched loop to wait for the read operation to complete. If this is undesired,
+        use the ``read_debug_reg_no_loop`` function instead, which just waits for a user configurable number of JTAG idle cycles.
+
+        Args:
+            dmi_addr (DMRegAddress): The DM register to read from
+            expected_data (str): The expected read data to match. Use the letter 'x' for don't care bits.
+            retries (int, optional): The number of polls on the status bit before considering the read operation to have failed. Defaults to 1.
+            comment (Optional[str], optional): An optional comment to provide context. Defaults to None.
+
+        Returns:
+            List[Vector]: The generated vectors.
+        """
         if comment is None:
             comment = ""
         comment += "/Verify debug reg {} to be 0b{}. Max retries = {}".format(
@@ -401,6 +495,7 @@ class RISCVDebugTap(JTAGTap):
             condition_vectors, self.driver.jtag_idle_vector()
         )
 
+        # We have to issue a reset of the DMI only to clear the busy error flag.
         idle_vectors = self.dmi_reset()
         # Pad the idle vectors to be a multiple of  8
         idle_vectors = VectorBuilder.pad_vectors(
@@ -459,6 +554,25 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> Union[List[Vector], List[NormalVector]]:
+        """
+           Write to a debug register using a DMIACCESS operation.
+
+           Notes:
+              If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
+              with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
+              should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
+              completion and thus not issue any matched loops.
+
+        Args:
+            dmi_addr (DMRegAddress): _description_
+            data (str): _description_
+            verify_completion (bool, optional): If True, use matched loops to verify command completion. Defaults to True.
+            retries (int, optional): The number of polls if ``verify_completion`` is True. Ignored if verification is disabled.
+            comment (Optional[str], optional): An optional comment to provide context for these vectors.
+
+        Returns:
+            Union[List[Vector], List[NormalVector]]: The list of generated vectors
+        """
         if comment is None:
             comment = ""
         comment += "/Write {} to debug reg {}.".format(
@@ -510,6 +624,22 @@ class RISCVDebugTap(JTAGTap):
     def write_reg_abstract_cmd_no_loop(
         self, reg: RISCVReg, data: BitArray, comment: Optional[str] = None
     ) -> List[NormalVector]:
+        """
+        Write to a RISC-V core register (not a debug module register) using a debug module ABSTRACT CMD.
+
+        This version of the command does not use any matched loops, i.e. it does not verify the completion of the command.
+        You most often use this command to change the program counter of your RISC-V core to make it jump to a memory location
+        you preloaded into memory.
+
+        Args:
+            reg: The RISC-V reg to modify
+            data: The 32-bit data to write to the register
+            comment: An optional comment to provide context.
+
+        Returns:
+            List[NormalVector]: The list of generated vectors.
+
+        """
         if comment is None:
             comment = ""
         comment += "/Write {} to registers {}".format(pp_binstr(data), reg)
@@ -537,6 +667,24 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> List[Vector]:
+        """
+        Write to a RISC-V core register (not a debug module register) using a debug module ABSTRACT CMD.
+
+        This version of the command uses matched loops to poll for the completion of the command for up to ``retries``
+        number of times. You most often use this command to change the program counter of your RISC-V core to make it
+        jump to a memory location you preloaded into memory.
+
+        Args:
+            reg: The RISC-V reg to modify
+            data: The 32-bit data to write to the register
+            retries: The number of times to poll for command completion in the matched loop
+            comment: An optional comment to provide context.
+
+        Returns:
+            List[NormalVector]: The list of generated vectors
+
+        """
+
         if comment is None:
             comment = ""
         comment += "/Write {} to registers {}".format(pp_binstr(data), reg)
@@ -564,6 +712,23 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> List[Vector]:
+        """
+        Read from a RISC-V core register (not a debug module register) using a debug module ABSTRACT CMD.
+
+        This version of the command uses matched loops to poll for the completion of the command for up to ``retries``
+        number of times.
+
+        Args:
+            reg: The RISC-V reg to modify
+            expected_data: The data to match against when reading from the register. Use the letter 'x' for don't
+                care bits
+            retries: The number of times to poll for command completion in the matched loop
+            comment: An optional comment to provide context.
+
+        Returns:
+            List[NormalVector]: The list of generated vectors
+
+        """
         if comment is None:
             comment = ""
         comment += "Verify register {} equals {}".format(reg, expected_data)
@@ -591,6 +756,22 @@ class RISCVDebugTap(JTAGTap):
         wait_cycles: int = 10,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
+        """
+        Read from a RISC-V core register (not a debug module register) using a debug module ABSTRACT CMD.
+
+        This version of the command does not use any matched loops, i.e. it does not verify the completion of the command.
+
+        Args:
+            reg: The RISC-V reg to modify
+            expected_data: The data to match against when reading from the register. Use the letter 'x' for don't
+                care bits
+            comment: An optional comment to provide context.
+
+        Returns:
+            List[NormalVector]: The list of generated vectors.
+
+        """
+
         if comment is None:
             comment = ""
         comment += "Verify register {} equals {}".format(reg, expected_data)
@@ -614,6 +795,24 @@ class RISCVDebugTap(JTAGTap):
     def halt_hart(
         self, hartsel: BitArray, comment: Optional[str] = None, retries: int = 1
     ) -> List[Vector]:
+        """
+        Halts the RISC-V hart (core).
+
+        This command makes the debug module assert the debug request line of the selected Hart (RISC-V debug spec
+        terminology for a core) which will cause the core to jump to the debug memory location (which contains an
+        infinite loop to trap the core).
+
+        This version of the function uses matched loops to poll until (up to ``retries`` number of times) the selected
+        hart jumped to the debug memory location and is thus "halted".
+        Args:
+            hartsel: The hartid of the core to halt.
+            comment: An optional comment for context
+            retries: The maximum number of times the matched loop should poll the 'allhalted' status bit.
+
+        Returns:
+            The list of generated vectors.
+
+        """
         if comment is None:
             comment = ""
         comment += "/Halting hart {}".format(pp_binstr(hartsel))
@@ -662,6 +861,27 @@ class RISCVDebugTap(JTAGTap):
     def halt_hart_no_loop(
         self, hartsel: BitArray, comment: Optional[str] = None, wait_cycles: int = 10
     ) -> List[NormalVector]:
+        """
+        Halts the RISC-V hart (core).
+
+        This command makes the debug module assert the debug request line of the selected Hart (RISC-V debug spec
+        terminology for a core) which will cause the core to jump to the debug memory location (which contains an
+        infinite loop to trap the core).
+
+        This version of the function does not use matched loops but instead wait for the specified number of JTAG idle
+        cycles for the core to halt before matching the allhalted status flag. You should try to increase this value if
+        your core is slow to halt.
+
+        Args:
+            hartsel: The hartid of the core to halt.
+            comment: An optional comment for context
+            wait_cycles: The maximum number of times the matched loop should poll the 'allhalted' status bit.
+
+        Returns:
+            The list of generated vectors.
+
+        """
+
         if comment is None:
             comment = ""
         comment += "/Halting hart {}".format(pp_binstr(hartsel))
@@ -719,6 +939,24 @@ class RISCVDebugTap(JTAGTap):
     def resume_harts(
         self, hartsel: BitArray, comment: Optional[str] = None, retries: int = 1
     ) -> List[Vector]:
+        """
+        Resume the RISC-V hart (core).
+
+        This command will cause the debug module to resume normal execution on the selected hart.
+
+        This version of the function uses matched loops to poll until (up to ``retries`` number of times) the selected
+        hart resumed regular operation and the `allresumeack` flag in the DMSTATUS reg is set.
+
+        Args:
+            hartsel: The hartid of the core to halt.
+            comment: An optional comment for context
+            retries: The maximum number of times the matched loop should poll the 'allhalted' status bit.
+
+        Returns:
+            The list of generated vectors.
+
+        """
+
         if comment is None:
             comment = ""
         comment += "/Resume hart {}".format(pp_binstr(hartsel))
@@ -769,6 +1007,24 @@ class RISCVDebugTap(JTAGTap):
     def resume_harts_no_loop(
         self, hartsel: BitArray, comment: Optional[str] = None, wait_cycles: int = 10
     ) -> List[NormalVector]:
+        """
+        Resume the RISC-V hart (core).
+
+        This command will cause the debug module to resume normal execution on the selected hart.
+
+        This version of the function does not use matched loops but instead waits for the specified number of JTAG idle
+        cycles for the cores to resume before matching the `allresumeack` status flag. You should try to increase this
+        value if your core is slow to resume.
+
+        Args:
+            hartsel: The hartid of the core to halt.
+            comment: An optional comment for context
+            wait_cycles: The maximum number of times the matched loop should poll the 'allhalted' status bit.
+
+        Returns:
+            The list of generated vectors.
+
+        """
         if comment is None:
             comment = ""
         comment += "/Resume hart {}".format(hartsel)
@@ -827,6 +1083,28 @@ class RISCVDebugTap(JTAGTap):
         )
         return vectors
 
+    @overload
+    def writeMem(
+            self,
+            addr: BitArray,
+            data: BitArray,
+            verify_completion: Literal[True] = True,
+            retries: int = 1,
+            comment: Optional[str] = None,
+    ) -> List[Vector]:
+        ...
+    @overload
+    def writeMem(
+            self,
+            addr: BitArray,
+            data: BitArray,
+            verify_completion: Literal[False] = True,
+            retries: int = 1,
+            comment: Optional[str] = None,
+    ) -> List[NormalVector]:
+        ...
+
+    @overload
     def writeMem(
         self,
         addr: BitArray,
@@ -835,6 +1113,34 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> List[Vector]:
+        ...
+
+    def writeMem(
+        self,
+        addr: BitArray,
+        data: BitArray,
+        verify_completion: bool = True,
+        retries: int = 1,
+        comment: Optional[str] = None,
+    ) -> Union[List[Vector], List[NormalVector]]:
+        """
+       Write to a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+
+       Notes:
+              If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
+              with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
+              should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
+              completion and thus not issue any matched loops.
+
+       Args:
+           addr: The address to read from
+           data: The 32-bit data to write to the memory location.
+           retries: The number of times to poll the DTMCSR register for the operation to complete.
+           comment: An optional comment to provide context for these vectors.
+
+       Returns:
+
+       """
         if comment is None:
             comment = ""
         comment += "/Writing {} to memory @{}".format(pp_binstr(data), pp_binstr(addr))
@@ -861,6 +1167,24 @@ class RISCVDebugTap(JTAGTap):
         retries: int = 1,
         comment: Optional[str] = None,
     ) -> List[Vector]:
+        """
+        Read from a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+
+        Notes:
+            This version of the command uses matched loops to poll for command completion with up to `retries` number of
+            tries before failling. Since Matched loops can cause lots of issues in your vector setup, you should avoid them
+            at all costs. Use the `_no_loop` version of this command instead to wait for a fixed number of idle cycles instead.
+
+        Args:
+            addr: The address to read from
+            expected_data: The 32-bit data to match against the read data. Use the letter 'x' for don't care bits.
+            retries: The number of times to poll the DTMCSR register for the operation to complete before matching against
+                the read-back data.
+            comment: An optional comment to provide context for these vectors.
+
+        Returns:
+
+        """
         if isinstance(expected_data, BitArray):
             expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
@@ -891,6 +1215,23 @@ class RISCVDebugTap(JTAGTap):
         wait_cycles: int,
         comment: Optional[str] = None,
     ) -> List[NormalVector]:
+        """
+        Read from a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+
+        This version of the command does not use matched loops but wait for a configurable number of JTAG idle cycles.
+
+        Notes:
+            You have to enable the readonaddr flag of the debug module before issuing readMem commands.
+
+        Args:
+            addr: The address to read from
+            expected_data: The 32-bit data to match against the read data. Use the letter 'x' for don't care bits.
+            wait_cycles: The number of JTAG Idle cycles to wait for the read operation to complete
+            comment: An optional comment to provide context for these vectors
+
+        Returns:
+            The list of generated vectors
+        """
         if isinstance(expected_data, BitArray):
             expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
@@ -921,6 +1262,11 @@ class RISCVDebugTap(JTAGTap):
         return vectors
 
     def enable_sbreadonaddr(self) -> List[NormalVector]:
+        """
+        Enable auto read on systembus
+        Returns:
+
+        """
         # Enable sbreadonaddr by writing appropriate values to SBCS register
         sbcs_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         sbcs_value[29:32] = 1

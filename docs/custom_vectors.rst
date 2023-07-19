@@ -12,6 +12,6 @@ documentation to understand how the different classes of *dumpling* interact
 with each other.
 
 That being said, the already existing scripts, e.g. the one for the *Siracusa*
-SoC should provide a good starting point for your own chip.
+SoC should provide a good starting point for your own chip. 
 
 

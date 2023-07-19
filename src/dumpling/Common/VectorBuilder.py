@@ -222,7 +222,8 @@ class VectorBuilder:
         the memory of a single vector entry in ASIC tester memory.
 
         Args:
-            repeat(int): The number of times the vector should be repeated. A 1 indicates a single application of the vector.
+            repeat(int): The number of times the vector should be repeated. A 1 indicates a single application
+              of the vector.
             comment(str): A string to annotate the vector with.
 
         Returns:
