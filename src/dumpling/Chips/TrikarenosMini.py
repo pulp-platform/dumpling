@@ -17,7 +17,7 @@ import math
 import re
 from pathlib import Path
 from collections import namedtuple
-from typing import Mapping
+from typing import List, Mapping
 
 import bitstring
 import click
@@ -27,7 +27,7 @@ from bitstring import BitArray
 bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
 from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
-from dumpling.Common.VectorBuilder import PinDecl, VectorBuilder
+from dumpling.Common.VectorBuilder import PinDecl, Vector, VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
@@ -165,7 +165,7 @@ def execute_elf(
             vector_builder.chip_reset = 0
             # Wait 1us
             reset_vector = vector_builder.vector(comment="Assert reset")
-            vectors += vector_builder.loop([reset_vector], 10)
+            vectors.append(vector_builder.loop([reset_vector], 10))
             # Write the vectors to disk
             vector_writer.write_vectors(vectors, compress=compress)
 

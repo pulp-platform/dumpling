@@ -169,7 +169,7 @@ def execute_elf(
             vector_builder.chip_reset = 0
             # Wait 1us
             reset_vector = vector_builder.vector(comment="Assert reset")
-            vectors += vector_builder.loop([reset_vector], 10)
+            vectors.append(vector_builder.loop([reset_vector], 10))
             # Write the vectors to disk
             vector_writer.write_vectors(vectors, compress=compress)
 
