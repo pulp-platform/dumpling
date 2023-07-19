@@ -133,7 +133,9 @@ class PULPJtagTap(JTAGTap):
     ) -> List[NormalVector]:
         if comment is None:
             comment = ""
-        comment += f"/Setup AXI4 adv dbg burst @{pp_binstr(start_addr)} for {nwords} words"
+        comment += (
+            f"/Setup AXI4 adv dbg burst @{pp_binstr(start_addr)} for {nwords} words"
+        )
         dr_value: BitArray = BitArray(53)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         dr_value[48:52] = cmd.to_bits()
         dr_value[16:48] = start_addr
@@ -317,8 +319,9 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.write32(
-                    BitArray(uint=start_addr, length=32), burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-                    comment=comment
+                    BitArray(uint=start_addr, length=32),
+                    burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    comment=comment,
                 )
                 start_addr = int(addr)
                 burst_data = []
@@ -358,7 +361,10 @@ class PULPJtagTap(JTAGTap):
         return vectors
 
     def verifyL2_no_loop(
-            self, elf_binary: os.PathLike, wait_cycles: int = 3, comment: Optional[str] = None,
+        self,
+        elf_binary: os.PathLike,
+        wait_cycles: int = 3,
+        comment: Optional[str] = None,
     ) -> List[NormalVector]:
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
@@ -376,9 +382,10 @@ class PULPJtagTap(JTAGTap):
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
                 vectors += self.read32_no_loop(
-                    BitArray(uint=start_addr, length=32), burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    BitArray(uint=start_addr, length=32),
+                    burst_data,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
                     wait_cycles=wait_cycles,
-                    comment=comment
+                    comment=comment,
                 )
                 start_addr = int(addr)
                 burst_data = []

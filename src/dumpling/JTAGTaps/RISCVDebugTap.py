@@ -206,12 +206,12 @@ class DMAbstractCmd:
 
 class RISCVDebugTap(JTAGTap):
     """A JTAG Tap implementation for the RISC-V JTAG Debug Transport Module
-    
+
     This class implements functions to interact with a RISC-V debug
     specification compliant debug module. It has been tested with the PULP
     implementation of the debug module.
     """
-    
+
     def __init__(self, driver: JTAGDriver, idcode: str = "0x249511C3"):
         super().__init__("RISC-V debug module", 5, driver)
         # Add JTAG registers
@@ -254,7 +254,7 @@ class RISCVDebugTap(JTAGTap):
     ) -> List[NormalVector]:
         """Start a DMIACCESS operation
 
-        Perform a read or write operation to one of the DM's registers through the DMIACCESS JTAG register. 
+        Perform a read or write operation to one of the DM's registers through the DMIACCESS JTAG register.
 
         Args:
             dm_op (DMIOp): The operation to perform
@@ -557,13 +557,13 @@ class RISCVDebugTap(JTAGTap):
         comment: Optional[str] = None,
     ) -> Union[List[Vector], List[NormalVector]]:
         """
-           Write to a debug register using a DMIACCESS operation.
+        Write to a debug register using a DMIACCESS operation.
 
-           Notes:
-              If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
-              with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
-              should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
-              completion and thus not issue any matched loops.
+        Notes:
+           If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
+           with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
+           should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
+           completion and thus not issue any matched loops.
 
         Args:
             dmi_addr (DMRegAddress): _description_
@@ -1087,22 +1087,23 @@ class RISCVDebugTap(JTAGTap):
 
     @overload
     def writeMem(
-            self,
-            addr: BitArray,
-            data: BitArray,
-            verify_completion: Literal[True] = True,
-            retries: int = 1,
-            comment: Optional[str] = None,
+        self,
+        addr: BitArray,
+        data: BitArray,
+        verify_completion: Literal[True] = True,
+        retries: int = 1,
+        comment: Optional[str] = None,
     ) -> List[Vector]:
         ...
+
     @overload
     def writeMem(
-            self,
-            addr: BitArray,
-            data: BitArray,
-            verify_completion: Literal[False] = False,
-            retries: int = 1,
-            comment: Optional[str] = None,
+        self,
+        addr: BitArray,
+        data: BitArray,
+        verify_completion: Literal[False] = False,
+        retries: int = 1,
+        comment: Optional[str] = None,
     ) -> List[NormalVector]:
         ...
 
@@ -1126,23 +1127,23 @@ class RISCVDebugTap(JTAGTap):
         comment: Optional[str] = None,
     ) -> Union[List[Vector], List[NormalVector]]:
         """
-       Write to a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
+        Write to a single 32-bit memory location using the "system bus access" (SBA) feature of the debug module.
 
-       Notes:
-              If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
-              with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
-              should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
-              completion and thus not issue any matched loops.
+        Notes:
+               If ``verify_completion`` is True, this function uses a matched loop to verify the completion of the command
+               with up to ``retries`` number of polls. Matched loops can cause lots of issues in your vector setup and you
+               should avoid them at all costs. Set the ``verify_completion`` paramter to `False` to not check for command
+               completion and thus not issue any matched loops.
 
-       Args:
-           addr: The address to read from
-           data: The 32-bit data to write to the memory location.
-           retries: The number of times to poll the DTMCSR register for the operation to complete.
-           comment: An optional comment to provide context for these vectors.
+        Args:
+            addr: The address to read from
+            data: The 32-bit data to write to the memory location.
+            retries: The number of times to poll the DTMCSR register for the operation to complete.
+            comment: An optional comment to provide context for these vectors.
 
-       Returns:
+        Returns:
 
-       """
+        """
         if comment is None:
             comment = ""
         comment += "/Writing {} to memory @{}".format(pp_binstr(data), pp_binstr(addr))
@@ -1246,7 +1247,9 @@ class RISCVDebugTap(JTAGTap):
         assert isinstance(expected_data, str)  # Fix type check errors
         if comment is None:
             comment = ""
-        comment += f"/Reading from systembus @0x{addr.hex} expecting 0x{expected_data_repr}"
+        comment += (
+            f"/Reading from systembus @0x{addr.hex} expecting 0x{expected_data_repr}"
+        )
         vectors = self.write_debug_reg(
             DMRegAddress.SBADDRESS0, addr.bin, verify_completion=False, comment=comment
         )
@@ -1261,11 +1264,14 @@ class RISCVDebugTap(JTAGTap):
         )
         return vectors
 
-
-
-    def set_sbcs(self, sbreadonaddr: bool, sbautoincrement: bool = False, comment: Optional[str] = None) -> List[NormalVector]:
+    def set_sbcs(
+        self,
+        sbreadonaddr: bool,
+        sbautoincrement: bool = False,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
         # Set sbcs by writing appropriate values to SBCS register
-        sbcs_value: BitArray = BitArray(32) # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        sbcs_value: BitArray = BitArray(32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         sbcs_value[29:32] = 1
         sbcs_value[20] = 1 if sbreadonaddr else 0
         sbcs_value[17:20] = 2
@@ -1273,11 +1279,16 @@ class RISCVDebugTap(JTAGTap):
         if comment is None:
             comment = ""
         comment += f"Set SBCS reg for subsequent reads to sbreadonaddr={sbreadonaddr} and sbautoincrement={sbautoincrement}."
-        return self.write_debug_reg(DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment=comment)
-    def check_end_of_computation(self, expected_return_code: int, wait_cycles=10, eoc_reg_addr = '0x1a1040a0'):
+        return self.write_debug_reg(
+            DMRegAddress.SBCS, sbcs_value.bin, verify_completion=False, comment=comment
+        )
+
+    def check_end_of_computation(
+        self, expected_return_code: int, wait_cycles=10, eoc_reg_addr="0x1a1040a0"
+    ):
         vectors = self.set_sbcs(True)
 
-        expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32) # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        expected_eoc_value: BitArray = BitArray(int=expected_return_code, length=32)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         expected_eoc_value[31] = 1
         vectors += self.readMem_no_loop(
             BitArray(eoc_reg_addr),  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
@@ -1326,7 +1337,7 @@ class RISCVDebugTap(JTAGTap):
         )  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
         return vectors
 
-    def loadL2(self, elf_binary: os.PathLike, comment: Optional[str]=None):
+    def loadL2(self, elf_binary: os.PathLike, comment: Optional[str] = None):
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
         stimuli = stim_generator.parse_binaries(4)
@@ -1334,10 +1345,20 @@ class RISCVDebugTap(JTAGTap):
         vectors += self.set_sbcs(False, True, comment)
         prev_addr = None
         for addr, word in sorted(stimuli.items()):
-            if not prev_addr or prev_addr+4 != int(addr):
-                vectors += self.write_debug_reg(DMRegAddress.SBADDRESS0, BitArray(addr).bin, verify_completion=False, comment="Writing start address")
+            if not prev_addr or prev_addr + 4 != int(addr):
+                vectors += self.write_debug_reg(
+                    DMRegAddress.SBADDRESS0,
+                    BitArray(addr).bin,
+                    verify_completion=False,
+                    comment="Writing start address",
+                )
             prev_addr = int(addr)
-            vectors += self.write_debug_reg(DMRegAddress.SBDATA0, BitArray(word).bin, verify_completion=False, comment="Writing data")
+            vectors += self.write_debug_reg(
+                DMRegAddress.SBDATA0,
+                BitArray(word).bin,
+                verify_completion=False,
+                comment="Writing data",
+            )
 
         vectors += self.set_sbcs(True, False)
 
