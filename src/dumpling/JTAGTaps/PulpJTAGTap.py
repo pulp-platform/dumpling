@@ -97,9 +97,7 @@ class PULPJtagTap(JTAGTap):
         id_value = ("1" if sel_fll_clk else "0") + soc_jtag_reg_value.bin
         if comment is None:
             comment = ""
-        comment += "/Set JTAG Config reg to {}, internal FLL {}".format(
-            pp_binstr(soc_jtag_reg_value), "enabled" if sel_fll_clk else "disabled"
-        )
+        comment += f"/Set JTAG Config reg to {pp_binstr(soc_jtag_reg_value)}, internal FLL {'enabled' if sel_fll_clk else 'disabled'}"
         return self.driver.write_reg(
             self, self.reg_soc_confreg, id_value, comment=comment
         )
@@ -112,9 +110,7 @@ class PULPJtagTap(JTAGTap):
     ) -> List[NormalVector]:
         if comment is None:
             comment = ""
-        comment += "/Verify JTAG Config reg is {} and FLL is {}".format(
-            pp_binstr(soc_jtag_reg_value), "enabled" if sel_fll_clk else "disabled"
-        )
+        comment += f"/Verify JTAG Config reg is {pp_binstr(soc_jtag_reg_value)} and FLL is {'enabled' if sel_fll_clk else 'disabled'}"
         id_value = ("1" if sel_fll_clk else "0") + soc_jtag_reg_value.bin
         return self.driver.read_reg(self, self.reg_soc_confreg, 9, id_value)
 
@@ -137,9 +133,7 @@ class PULPJtagTap(JTAGTap):
     ) -> List[NormalVector]:
         if comment is None:
             comment = ""
-        comment += "/Setup AXI4 adv dbg burst @{} for {} words".format(
-            pp_binstr(start_addr), nwords
-        )
+        comment += f"/Setup AXI4 adv dbg burst @{pp_binstr(start_addr)} for {nwords} words"
         dr_value: BitArray = BitArray(53)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         dr_value[48:52] = cmd.to_bits()
         dr_value[16:48] = start_addr
@@ -151,9 +145,9 @@ class PULPJtagTap(JTAGTap):
     ) -> List[NormalVector]:
         if comment is None:
             comment = ""
-        comment += "/Write burst data for {} words".format(len(data))
+        comment += f"/Write burst data for {len(data)} words"
         burst = "1"  # Start Bit (p.20 adv dbg docu)
-        for idx, word in enumerate(data):
+        for word in data:
             burst += word.bin[::-1]  # Actual Data to write LSB first
         burst += (
             32 * "1"
@@ -181,7 +175,7 @@ class PULPJtagTap(JTAGTap):
                 break
 
         burst = ""
-        for idx, word in enumerate(expected_data):
+        for word in expected_data:
             burst += word.bin[::-1]  # Actual Data to read LSB first
         burst += 32 * "X"  # Ignore the CRC
         # Shift DR until we see a status=1 bit
@@ -219,7 +213,7 @@ class PULPJtagTap(JTAGTap):
                 break
 
         burst = ""
-        for idx, word in enumerate(expected_data):
+        for word in expected_data:
             burst += word.bin[::-1]  # Actual Data to read LSB first
         burst += 32 * "X"  # Ignore the CRC
 
@@ -251,9 +245,7 @@ class PULPJtagTap(JTAGTap):
         nwords = len(data)
         if comment is None:
             comment = ""
-        comment += "/Write32 burst @{} for {} bytes".format(
-            pp_binstr(start_addr), nwords
-        )
+        comment += f"/Write32 burst @{pp_binstr(start_addr)} for {nwords} bytes"
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         # Setup Burst (p.17 of ADV DBG Doc)
@@ -274,9 +266,7 @@ class PULPJtagTap(JTAGTap):
         nwords = len(expected_data)
         if comment is None:
             comment = ""
-        comment += "/Read32 burst @{} for {} bytes".format(
-            pp_binstr(start_addr), nwords
-        )
+        comment += f"/Read32 burst @{pp_binstr(start_addr)} for {nwords} bytes"
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         # Setup Burst (p.17 of ADV DBG Doc)
@@ -297,9 +287,7 @@ class PULPJtagTap(JTAGTap):
         nwords = len(expected_data)
         if comment is None:
             comment = ""
-        comment += "/Read32 burst @{} for {} bytes".format(
-            pp_binstr(start_addr), nwords
-        )
+        comment += f"/Read32 burst @{pp_binstr(start_addr)} for {nwords} bytes"
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         # Setup Burst (p.17 of ADV DBG Doc)
