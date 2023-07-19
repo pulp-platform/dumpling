@@ -13,6 +13,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+""" Provides the JTAGDriver class for high lever JTAG FSM vector bitbanging """
+
 from typing import List, Optional
 
 import bitstring
@@ -308,7 +311,9 @@ class JTAGDriver:
         """
         if comment is None:
             comment = ""
-        comment += "/Set IR of tap {} to {}".format(tap.name, pp_binstr(BitArray(bin=ir_value)))
+        comment += "/Set IR of tap {} to {}".format(
+            tap.name, pp_binstr(BitArray(bin=ir_value))
+        )
         vectors = self.jtag_goto_shift_ir(comment)
         chain = ""
         for chain_elem in self.chain:
@@ -358,7 +363,9 @@ class JTAGDriver:
         """
         if comment is None:
             comment = ""
-        comment += "/Set DR of tap {} to {}".format(tap.name, pp_binstr(BitArray(bin=dr_value)))
+        comment += "/Set DR of tap {} to {}".format(
+            tap.name, pp_binstr(BitArray(bin=dr_value))
+        )
         if expected_dr_value and not all(
             map(lambda x: x in ["x", "X"], expected_dr_value)
         ):

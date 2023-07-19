@@ -29,6 +29,8 @@ from pyparsing import TypeVar
 
 
 class NormalVector(TypedDict):
+    """A regular ATE vector that is applied 'repeat' times to the DUT."""
+
     type: Literal["vec"]
     vector: Mapping[str, str]
     repeat: int
@@ -36,6 +38,17 @@ class NormalVector(TypedDict):
 
 
 class MatchedLoopVector(TypedDict):
+    """A matched loop vector
+
+    The HP93000 ATE applies the condition vector and if there is a missmatch,
+    applies the idle vectors before trying the condition vectors again.
+
+    This sequencer instruction has severe limitations and can cause all kinds of
+    issues on the ASIC tester (e.g. the tester being unable to show any error
+    markers). Also, the condition and idle vectors need to be a multiple of 8
+    vectors and you cannot nest them.
+    """
+
     type: Literal["match_loop"]
     cond_vectors: Sequence["NormalVector"]
     idle_vectors: Sequence["NormalVector"]
@@ -43,6 +56,14 @@ class MatchedLoopVector(TypedDict):
 
 
 class LoopVector(TypedDict):
+    """Apply the vectors in loop_boody repeat times
+
+    This sequencer instruction for the HP93000 ATE applies the same vectors
+    'repeat' times. If you only want to repeat a single vector, you should
+    rather use the 'repeat' argument of normal vectors than creating a dedicated
+    loop vector. It's more efficient.
+    """
+
     type: Literal["loop"]
     loop_body: Sequence["Vector"]
     repeat: int
@@ -280,24 +301,23 @@ class VectorBuilder:
             List[Mapping]: The compressed list of vectors
 
         """
-        prev_vector = None
         filtered_vectors = []
         current_vector: Optional[NormalVector] = None
         for vec in vectors:
-            if vec['type'] == "vec":
+            if vec["type"] == "vec":
                 if current_vector is None:
-                    current_vector = vec.copy()
-                elif current_vector['vector'] == vec['vector'] and current_vector['comment'] == vec['comment']:
-                    current_vector['repeat'] += vec['repeat']
+                    current_vector = vec.copy()  # type: ignore
+                elif current_vector["vector"] == vec["vector"] and current_vector["comment"] == vec["comment"]:  # type: ignore
+                    current_vector["repeat"] += vec["repeat"]  # type: ignore
                 else:
                     filtered_vectors.append(current_vector)
-                    current_vector = vec.copy()
-            elif vec['type'] == "loop":
+                    current_vector = vec.copy()  # type: ignore
+            elif vec["type"] == "loop":
                 if current_vector:
                     filtered_vectors.append(current_vector)
                     current_vector = None
                 copied_vec = vec.copy()
-                copied_vec['loop_body'] = VectorBuilder.compress_vectors(vec['loop_body'])
+                copied_vec["loop_body"] = VectorBuilder.compress_vectors(vec["loop_body"])  # type: ignore
                 filtered_vectors.append(copied_vec)
             else:
                 if current_vector:

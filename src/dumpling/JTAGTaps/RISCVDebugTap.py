@@ -865,12 +865,12 @@ class RISCVDebugTap(JTAGTap):
             expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
         else:
-            if re.fullmatch(r'[01]+', expected_data):
+            if re.fullmatch(r"[01]+", expected_data):
                 expected_data_repr = pp_binstr(BitArray(expected_data))
             else:
                 expected_data_repr = expected_data
 
-        assert(isinstance(expected_data,str)) # Fix type check errors
+        assert isinstance(expected_data, str)  # Fix type check errors
         if comment is None:
             comment = ""
         comment += "/Reading from systembus @{} expecting {}".format(
@@ -895,12 +895,12 @@ class RISCVDebugTap(JTAGTap):
             expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
         else:
-            if re.fullmatch(r'[01]+', expected_data):
+            if re.fullmatch(r"[01]+", expected_data):
                 expected_data_repr = pp_binstr(BitArray(expected_data))
             else:
                 expected_data_repr = expected_data
 
-        assert(isinstance(expected_data,str)) # Fix type check errors
+        assert isinstance(expected_data, str)  # Fix type check errors
         if comment is None:
             comment = ""
         comment += "/Reading from systembus @0x{} expecting 0x".format(

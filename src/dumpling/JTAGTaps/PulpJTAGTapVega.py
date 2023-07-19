@@ -308,7 +308,9 @@ class PULPJtagTapVega(JTAGTap):
         nwords = len(data)
         if comment is None:
             comment = ""
-        comment += "/Write32 burst @{} for {} bytes".format(pp_binstr(start_addr), nwords)
+        comment += "/Write32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         # Setup Burst (p.17 of ADV DBG Doc)
@@ -329,7 +331,9 @@ class PULPJtagTapVega(JTAGTap):
         nwords = len(expected_data)
         if comment is None:
             comment = ""
-        comment += "/Read32 burst @{} for {} bytes".format(pp_binstr(start_addr), nwords)
+        comment += "/Read32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
         # Setup Burst (p.17 of ADV DBG Doc)
@@ -350,7 +354,9 @@ class PULPJtagTapVega(JTAGTap):
         nwords = len(expected_data)
         if comment is None:
             comment = ""
-        comment += "/Read32 burst @{} for {} bytes".format(pp_binstr(start_addr), nwords)
+        comment += "/Read32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
         # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select(comment=comment)
         # Setup Burst (p.17 of ADV DBG Doc)

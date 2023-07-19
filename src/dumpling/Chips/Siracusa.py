@@ -21,15 +21,16 @@ from typing import Mapping
 
 import bitstring
 import click
-from dumpling.Common.ElfParser import ElfParser
 from bitstring import BitArray
 
-bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
-from dumpling.Common.HP93000 import HP93000VectorWriter
+from dumpling.Common.ElfParser import ElfParser
 from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
+from dumpling.Common.HP93000 import HP93000VectorWriter
 from dumpling.Common.VectorBuilder import PinDecl, VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
+
+bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 
 
 pins: Mapping[str, PinDecl] = {
@@ -704,9 +705,9 @@ def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
 )
 @click.option(
     "--lock-count",
-    default=16,
+    default="16",
     show_default=True,
-    type=click.Choice([8, 16, 32, 64]),
+    type=click.Choice(["8", "16", "32", "64"]),
     help="The number of stable cycles unil LOCK is asserted.",
 )
 @click.option(
