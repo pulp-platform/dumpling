@@ -48,9 +48,9 @@ FC_CORE_ID: BitArray = BitArray("0x003e0")  # type: ignore until https://github.
 vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
-# Instantiate the two JTAG taps in Trikarenos miniPULP
+# Instantiate the RISC-V Debug TAP
 riscv_debug_tap = RISCVDebugTap(jtag_driver, "0x50001db3")
-# Add the taps to the jtag chain in the right order
+# Add the tap to the jtag chain
 jtag_driver.add_tap(riscv_debug_tap)
 
 # Commands

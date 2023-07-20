@@ -1239,8 +1239,8 @@ class RISCVDebugTap(JTAGTap):
             expected_data = (32 - len(expected_data)) * "x" + expected_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
 
         if isinstance(expected_data, BitArray):
-            expected_data = expected_data.bin
             expected_data_repr = pp_binstr(expected_data)
+            expected_data = expected_data.bin
         else:
             if re.fullmatch(r"[01]+", expected_data):
                 expected_data_repr = pp_binstr(BitArray(expected_data))
@@ -1254,7 +1254,7 @@ class RISCVDebugTap(JTAGTap):
             pp_binstr(addr), expected_data_repr
         )
         # Enable read on address write and set the correct access size.
-        vectors: List[Vector] = self.set_sbcs(sbreadonaddr=True, sbautoincrement=False, sbaccess=len(data))  # type: ignore
+        vectors: List[Vector] = self.set_sbcs(sbreadonaddr=True, sbautoincrement=False, sbaccess=len(expected_data))  # type: ignore
 
         # Write the address in chunks of 32-bit starting from the most significant chunk (since writing to th)
         for idx, addr_chunk in reversed(list(enumerate(addr.cut(32)))):
