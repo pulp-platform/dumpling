@@ -1,7 +1,7 @@
 # Manuel Eggimann <meggimann@iis.ee.ethz.ch>
 #
 # Copyright (C) 2020-2022 ETH Zürich
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,15 +13,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 import bitstring
 from dumpling.Common.ElfParser import ElfParser
-from dumpling.Common.VectorBuilder import VectorBuilder
+from dumpling.Common.Utilities import pp_binstr
+from dumpling.Common.VectorBuilder import VectorBuilder, NormalVector, Vector
 from dumpling.Drivers.JTAG import JTAGTap, JTAGDriver, JTAGRegister
 from bitstring import BitArray
-bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+
+bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 
 
 class PULPJtagTapVega(JTAGTap):
@@ -29,8 +32,9 @@ class PULPJtagTapVega(JTAGTap):
     See Also:
         Check the adv_dbg documentation for details on the protocol used for this JTAGTap
     """
-    DBG_MODULE_ID = BitArray('0b100000')
-    #DBG_MODULE_ID = BitArray('0x10102001')
+
+    DBG_MODULE_ID = BitArray("0b100000")
+    # DBG_MODULE_ID = BitArray('0x10102001')
 
     class OBSERVABLE_SIGNAL(Enum):
         pmu_soc_trc_clk_o = 0
@@ -67,47 +71,82 @@ class PULPJtagTapVega(JTAGTap):
         vref_12_ok_i = 31
 
     class DBG_OP(Enum):
-        NOP = '0x0'
-        WRITE8 = '0x1'
-        WRITE16 = '0x2'
-        WRITE32 = '0x3'
-        WRITE64 = '0x4'
-        READ8 = '0x5'
-        READ16 = '0x6'
-        READ32 = '0x7'
-        READ64 = '0x8'
-        INT_REG_WRITE = '0x9'
-        INT_REG_SELECT = '0xD'
+        NOP = "0x0"
+        WRITE8 = "0x1"
+        WRITE16 = "0x2"
+        WRITE32 = "0x3"
+        WRITE64 = "0x4"
+        READ8 = "0x5"
+        READ16 = "0x6"
+        READ32 = "0x7"
+        READ64 = "0x8"
+        INT_REG_WRITE = "0x9"
+        INT_REG_SELECT = "0xD"
 
-        def to_bits(self):
-            return BitArray(self.value)
-
+        def to_bits(self) -> BitArray:
+            return BitArray(self.value)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
 
     def __init__(self, driver: JTAGDriver):
         super().__init__("PULP JTAG module for Vega", 4, driver)
-        self.reg_idcode = self._add_reg(JTAGRegister("IDCODE", '0010', 32))
-        self.reg_soc_axireg = self._add_reg(JTAGRegister("SoC AXIREG", "0100", 96)) #The size of the axi reg depends on the burst setup
-        self.reg_soc_confreg = self._add_reg(JTAGRegister('SoC CONFREG', '0110', 8))
-        self.reg_soc_clk_byp_reg = self._add_reg(JTAGRegister('SoC CLK BYP', '0111', 5))
-        self.reg_soc_observ= self._add_reg(JTAGRegister('SoC OBSERV', '1000', 32))
+        self.reg_idcode = self._add_reg(JTAGRegister("IDCODE", "0010", 32))
+        self.reg_soc_axireg = self._add_reg(
+            JTAGRegister("SoC AXIREG", "0100", 96)
+        )  # The size of the axi reg depends on the burst setup
+        self.reg_soc_confreg = self._add_reg(JTAGRegister("SoC CONFREG", "0110", 8))
+        self.reg_soc_clk_byp_reg = self._add_reg(JTAGRegister("SoC CLK BYP", "0111", 5))
+        self.reg_soc_observ = self._add_reg(JTAGRegister("SoC OBSERV", "1000", 32))
 
-    def set_clk_bypass_reg(self, qosc_byp:bool=False, ref_clk_byp:bool=False, per_fll_byp:bool=False, soc_fll_byp:bool=True, cluster_fll_byp:bool=True):
-        enabled_bypasses = [name for name, enabled in zip(['qosc', 'ref_clk', 'per_fll', 'soc_fll', 'cluster_fll'], [qosc_byp, ref_clk_byp, per_fll_byp, soc_fll_byp, cluster_fll_byp]) if enabled]
-        comment = "Bypassing {}".format(', '.join(enabled_bypasses))
-        id_value = bitstring.pack('bool, bool, bool, bool, bool',cluster_fll_byp, soc_fll_byp, per_fll_byp, ref_clk_byp, qosc_byp)
-        return self.driver.write_reg(self, self.reg_soc_clk_byp_reg, id_value.bin, comment=comment)
+    def set_clk_bypass_reg(
+        self,
+        qosc_byp: bool = False,
+        ref_clk_byp: bool = False,
+        per_fll_byp: bool = False,
+        soc_fll_byp: bool = True,
+        cluster_fll_byp: bool = True,
+    ) -> List[NormalVector]:
+        enabled_bypasses = [
+            name
+            for name, enabled in zip(
+                ["qosc", "ref_clk", "per_fll", "soc_fll", "cluster_fll"],
+                [qosc_byp, ref_clk_byp, per_fll_byp, soc_fll_byp, cluster_fll_byp],
+            )
+            if enabled
+        ]
+        comment = "Bypassing {}".format(", ".join(enabled_bypasses))
+        id_value = bitstring.pack(
+            "bool, bool, bool, bool, bool",
+            qosc_byp,
+            ref_clk_byp,
+            per_fll_byp,
+            soc_fll_byp,
+            cluster_fll_byp,
+        )
+        return self.driver.write_reg(
+            self, self.reg_soc_clk_byp_reg, id_value.bin, comment=comment
+        )
 
-    def disable_observability(self):
+    def disable_observability(self) -> List[NormalVector]:
         """
             Disable the observability functionality and make the PWM3 pad act normally again.
 
         Returns: The vectors associated to the pad
 
         """
-        id_value = BitArray(32) #All zeros
-        return self.driver.write_reg(self, self.reg_soc_observ, id_value.bin, comment="Disabling observability feature")
+        id_value = BitArray(32)  # All zeros
+        return self.driver.write_reg(
+            self,
+            self.reg_soc_observ,
+            id_value.bin,
+            comment="Disabling observability feature",
+        )
 
-    def enable_observability(self, signal: OBSERVABLE_SIGNAL, pulldown_enable=False, pullup_enable=False, drv_strength=0):
+    def enable_observability(
+        self,
+        signal: OBSERVABLE_SIGNAL,
+        pulldown_enable: bool = False,
+        pullup_enable: bool = False,
+        drv_strength: int = 0,
+    ) -> List[NormalVector]:
         """
             Programs the observability register to generate make one 32 different internal signals available to the PWM3 pad
 
@@ -121,148 +160,214 @@ class PULPJtagTapVega(JTAGTap):
             List: The vectors corresponding to the operation
         """
         comment = "Enable observability of {}".format(signal.name)
-        dr_value = bitstring.pack('pad:22, uint:5, uint:2, bool, bool, 0b1', signal.value, drv_strength, pullup_enable, pulldown_enable)
-        return self.driver.write_reg(self, self.reg_soc_observ, dr_value.bin, comment=comment)
+        dr_value = bitstring.pack(
+            "0b1, bool, bool, uint:2, uint:5, pad:22",
+            pulldown_enable,
+            pullup_enable,
+            drv_strength,
+            signal.value,
+        )
+        return self.driver.write_reg(
+            self, self.reg_soc_observ, dr_value.bin, comment=comment
+        )
 
+    def init_pulp_tap(self) -> List[NormalVector]:
+        return self.driver.jtag_set_ir(
+            self, self.reg_soc_axireg.IR_value, comment="Init Pulp Tap"
+        )
 
-    def init_pulp_tap(self):
-        return self.driver.jtag_set_ir(self, self.reg_soc_axireg.IR_value, comment="Init Pulp Tap")
+    def module_select(self, comment: Optional[str] = None) -> List[NormalVector]:
+        return self.driver.jtag_set_dr(
+            self, PULPJtagTapVega.DBG_MODULE_ID.bin, comment=comment
+        )
 
-    def module_select(self, comment=""):
-        return self.driver.jtag_set_dr(self, PULPJtagTapVega.DBG_MODULE_ID.bin, comment=comment)
-
-    def setup_burst(self, cmd: DBG_OP, start_addr:BitArray, nwords:int, comment=""):
-        comment += "/Setup AXI4 adv dbg burst @{} for {} words".format(start_addr, nwords)
-        dr_value = BitArray(53)
+    def setup_burst(
+        self,
+        cmd: DBG_OP,
+        start_addr: BitArray,
+        nwords: int,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
+        if comment is None:
+            comment = ""
+        comment += "/Setup AXI4 adv dbg burst @{} for {} words".format(
+            pp_binstr(start_addr), nwords
+        )
+        dr_value: BitArray = BitArray(53)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         dr_value[48:52] = cmd.to_bits()
         dr_value[16:48] = start_addr
         dr_value[0:16] = BitArray(uint=nwords, length=16)
         return self.driver.jtag_set_dr(self, dr_value.bin, comment=comment)
 
-    def write_burst(self, data:List[BitArray], comment=""):
+    def write_burst(
+        self, data: List[BitArray], comment: Optional[str] = None
+    ) -> List[NormalVector]:
+        if comment is None:
+            comment = ""
         comment += "/Write burst data for {} words".format(len(data))
-        burst = '1' #Start Bit (p.20 adv dbg docu)
+        burst = "1"  # Start Bit (p.20 adv dbg docu)
         for idx, word in enumerate(data):
-            burst += word.bin[::-1] #Actual Data to write LSB first
-        burst += 32*'1' #Dummy CRC (we do not check the match bit of the write transfer so we don't have to send a valid CRC code
-        burst += '0'
-        burst = burst[::-1] #set_dr is LSB first so we have to reverse the order
+            burst += word.bin[::-1]  # Actual Data to write LSB first
+        burst += (
+            32 * "1"
+        )  # Dummy CRC (we do not check the match bit of the write transfer so we don't have to send a valid CRC code
+        burst += "0"
+        burst = burst[
+            ::-1
+        ]  # set_dr expects data in MSB-to-LSB order so we have to reverse the string
         return self.driver.jtag_set_dr(self, burst, comment=comment)
 
-    def read_burst_no_loop(self, expected_data:List[BitArray], wait_cycles=1, comment=""):
+    def read_burst_no_loop(
+        self,
+        expected_data: List[BitArray],
+        wait_cycles: int = 1,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
+        if comment is None:
+            comment = ""
         comment += "/Read burst data for {} words".format(len(expected_data))
 
         vectors = self.driver.jtag_goto_shift_dr(comment)
         # Shift once for each tap before the jtag pulp
         for tap in self.driver.chain:
             if tap != self:
-                vectors += self.driver.jtag_shift('0', 'X', noexit=True)
+                vectors += self.driver.jtag_shift("0", "X", noexit=True)
             else:
                 break
 
-        burst = ''
+        burst = ""
         for idx, word in enumerate(expected_data):
             burst += word.bin[::-1]  # Actual Data to read LSB first
-        burst += 32 * 'X'  # Ignore the CRC
+        burst += 32 * "X"  # Ignore the CRC
         # Shift DR until we see a status=1 bit
         # In this matched_loop-free version of read_burst we expect the user to tell us how many cycles the pulp_tap needs for the read ready bit to be raised (wait_cycles argument)
-        wait_status_bits = '0'*wait_cycles+'1'
-        vectors += self.driver.jtag_shift('0'*(wait_cycles+1), wait_status_bits, comment="Shift until status bit is 1", noexit=True)
+        wait_status_bits = "0" * wait_cycles + "1"
+        vectors += self.driver.jtag_shift(
+            "0" * (wait_cycles + 1),
+            wait_status_bits,
+            comment="Shift until status bit is 1",
+            noexit=True,
+        )
         # Now we shift the actual data
-        vectors += self.driver.jtag_shift(len(burst) * '0',
-                                          expected_chain=burst)  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
+        vectors += self.driver.jtag_shift(
+            len(burst) * "0", expected_chain=burst
+        )  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
         #  an issue
         return vectors
 
-    def read_burst(self, expected_data:List[BitArray], comment="", retries=1):
+    def read_burst(
+        self,
+        expected_data: List[BitArray],
+        comment: Optional[str] = None,
+        retries: int = 1,
+    ) -> List[Vector]:
+        if comment is None:
+            comment = ""
         comment += "/Read burst data for {} words".format(len(expected_data))
 
-        vectors = self.driver.jtag_goto_shift_dr(comment)
+        vectors: List[Vector] = list(self.driver.jtag_goto_shift_dr(comment))
         # Shift once for each tap before the jtag pulp
         for tap in self.driver.chain:
             if tap != self:
-                vectors += self.driver.jtag_shift('0', 'X', noexit=True)
+                vectors += self.driver.jtag_shift("0", "X", noexit=True)
             else:
                 break
 
-        burst = ''
+        burst = ""
         for idx, word in enumerate(expected_data):
             burst += word.bin[::-1]  # Actual Data to read LSB first
-        burst += 32 * 'X'  # Ignore the CRC
+        burst += 32 * "X"  # Ignore the CRC
 
-        #Shift DR until we see a status=1 bit
-        condition_vectors = self.driver.jtag_shift('0', '1', comment="Shift until status bit is 1", noexit=True)
-        #Pad to multiple of 8 vectors
-        condition_vectors = VectorBuilder.pad_vectors(condition_vectors, self.driver.jtag_idle_vector())
+        # Shift DR until we see a status=1 bit
+        condition_vectors = self.driver.jtag_shift(
+            "0", "1", comment="Shift until status bit is 1", noexit=True
+        )
+        # Pad to multiple of 8 vectors
+        condition_vectors = VectorBuilder.pad_vectors(
+            condition_vectors, self.driver.jtag_idle_vector()
+        )
         idle_vectors = self.driver.jtag_idle_vectors(8)
-        vectors += self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries)
-        vectors += self.driver.jtag_idle_vectors(8)  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
+        vectors.append(
+            self.driver.vector_builder.matched_loop(
+                condition_vectors, idle_vectors, retries
+            )
+        )
+        vectors += self.driver.jtag_idle_vectors(
+            8
+        )  # Make sure there are at least 8 normal vectors before the next matched loop by insertion idle instructions
 
-
-        vectors += self.driver.jtag_shift(len(burst)*'0', expected_chain=burst) #We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
+        vectors += self.driver.jtag_shift(
+            len(burst) * "0", expected_chain=burst
+        )  # We leave the shift dr state before we shifted the bypass bits of the taps that follow the pulp jtag tap. This is not
         #  an issue
         return vectors
 
-    def write32(self, start_addr:BitArray, data:List[BitArray], comment=""):
+    def write32(
+        self, start_addr: BitArray, data: List[BitArray], comment: Optional[str] = None
+    ) -> List[NormalVector]:
         nwords = len(data)
-        comment += "/Write32 burst @{} for {} bytes".format(start_addr, nwords)
-        #Module Selet Command (p.15 of ADV DBG Doc)
+        if comment is None:
+            comment = ""
+        comment += "/Write32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
+        # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
-        #Setup Burst (p.17 of ADV DBG Doc)
-        vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.WRITE32, start_addr, nwords, comment=comment)
-        #Burst the data
+        # Setup Burst (p.17 of ADV DBG Doc)
+        vectors += self.setup_burst(
+            PULPJtagTapVega.DBG_OP.WRITE32, start_addr, nwords, comment=comment
+        )
+        # Burst the data
         vectors += self.write_burst(data)
         return vectors
 
-    def read32(self, start_addr:BitArray, expected_data:List[BitArray], retries=1, comment=""):
+    def read32(
+        self,
+        start_addr: BitArray,
+        expected_data: List[BitArray],
+        retries: int = 1,
+        comment: Optional[str] = None,
+    ) -> List[Vector]:
         nwords = len(expected_data)
-        comment += "/Read32 burst @{} for {} bytes".format(start_addr, nwords)
-        #Module Selet Command (p.15 of ADV DBG Doc)
+        if comment is None:
+            comment = ""
+        comment += "/Read32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
+        # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select()
-        #Setup Burst (p.17 of ADV DBG Doc)
-        vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords, comment=comment)
-        #Burst the data
+        # Setup Burst (p.17 of ADV DBG Doc)
+        vectors += self.setup_burst(
+            PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords, comment=comment
+        )
+        # Burst the data
         vectors += self.read_burst(expected_data, retries=retries)
         return vectors
 
-    def read32_no_loop(self, start_addr:BitArray, expected_data:List[BitArray], wait_cycles=1, comment=""):
+    def read32_no_loop(
+        self,
+        start_addr: BitArray,
+        expected_data: List[BitArray],
+        wait_cycles: int = 1,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
         nwords = len(expected_data)
-        comment += "/Read32 burst @{} for {} bytes".format(start_addr, nwords)
-        #Module Selet Command (p.15 of ADV DBG Doc)
+        if comment is None:
+            comment = ""
+        comment += "/Read32 burst @{} for {} bytes".format(
+            pp_binstr(start_addr), nwords
+        )
+        # Module Selet Command (p.15 of ADV DBG Doc)
         vectors = self.module_select(comment=comment)
-        #Setup Burst (p.17 of ADV DBG Doc)
+        # Setup Burst (p.17 of ADV DBG Doc)
         vectors += self.setup_burst(PULPJtagTapVega.DBG_OP.READ32, start_addr, nwords)
-        #Burst the data
+        # Burst the data
         vectors += self.read_burst_no_loop(expected_data, wait_cycles=wait_cycles)
         return vectors
 
-    def loadL2(self, elf_binary:str, comment=""):
-        stim_generator = ElfParser(verbose=False)
-        stim_generator.add_binary(elf_binary)
-        stimuli = stim_generator.parse_binaries(4)
-
-        vectors = []
-
-        #Split the stimuli into bursts
-        burst_data = []
-        start_addr = None
-        prev_addr = None
-        for addr, word in sorted(stimuli.items()):
-            if not start_addr:
-                start_addr = int(addr)
-            #If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
-            if prev_addr and (prev_addr+4 != int(addr) or len(burst_data)>=256):
-                vectors += self.write32(BitArray(uint=start_addr, length=32), burst_data)
-                start_addr = int(addr)
-                burst_data = []
-            prev_addr = int(addr)
-            burst_data.append(BitArray(uint=int(word), length=32))
-
-        #Create the final burst
-        vectors += self.write32(BitArray(uint=start_addr, length=32), burst_data)
-        return vectors
-
-    def verifyL2(self, elf_binary:str, retries=1, comment=""):
+    def loadL2(
+        self, elf_binary: os.PathLike, comment: Optional[str] = None
+    ) -> List[NormalVector]:
         stim_generator = ElfParser(verbose=False)
         stim_generator.add_binary(elf_binary)
         stimuli = stim_generator.parse_binaries(4)
@@ -278,40 +383,74 @@ class PULPJtagTapVega(JTAGTap):
                 start_addr = int(addr)
             # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
             if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
-                vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)
-                start_addr = int(addr)
-                burst_data = []
-            prev_addr = int(addr)
-            burst_data.append(BitArray(uint=int(word), length=32))
-
-        #Create the final burst
-        vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)
-        return vectors
-
-    def verifyL2_no_loop(self, elf_binary: str, comment=""):
-        stim_generator = ElfParser(verbose=False)
-        stim_generator.add_binary(elf_binary)
-        stimuli = stim_generator.parse_binaries(4)
-
-        vectors = []
-
-        # Split the stimuli into bursts
-        burst_data = []
-        start_addr = None
-        prev_addr = None
-        for addr, word in sorted(stimuli.items()):
-            if not start_addr:
-                start_addr = int(addr)
-            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
-            if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
-                vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
+                vectors += self.write32(
+                    BitArray(uint=start_addr, length=32), burst_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                )
                 start_addr = int(addr)
                 burst_data = []
             prev_addr = int(addr)
             burst_data.append(BitArray(uint=int(word), length=32))
 
         # Create the final burst
-        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)
+        vectors += self.write32(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        return vectors
+
+    def verifyL2(
+        self, elf_binary: os.PathLike, retries: int = 1, comment: Optional[str] = None
+    ) -> List[Vector]:
+        stim_generator = ElfParser(verbose=False)
+        stim_generator.add_binary(elf_binary)
+        stimuli = stim_generator.parse_binaries(4)
+
+        vectors = []
+
+        # Split the stimuli into bursts
+        burst_data = []
+        start_addr = None
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
+            if not start_addr:
+                start_addr = int(addr)
+            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
+            if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
+                vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                start_addr = int(addr)
+                burst_data = []
+            prev_addr = int(addr)
+            burst_data.append(BitArray(uint=int(word), length=32))
+
+        # Create the final burst
+        vectors += self.read32(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        return vectors
+
+    def verifyL2_no_loop(
+        self, elf_binary: os.PathLike, comment: Optional[str] = None
+    ) -> List[NormalVector]:
+        stim_generator = ElfParser(verbose=False)
+        stim_generator.add_binary(elf_binary)
+        stimuli = stim_generator.parse_binaries(4)
+
+        vectors = []
+
+        # Split the stimuli into bursts
+        burst_data = []
+        start_addr = None
+        prev_addr = None
+        for addr, word in sorted(stimuli.items()):
+            if not start_addr:
+                start_addr = int(addr)
+            # If there is a gap in the data to load or the burst would end up longer than 256 words, start a new burst
+            if prev_addr and (prev_addr + 4 != int(addr) or len(burst_data) >= 256):
+                vectors += self.read32_no_loop(
+                    BitArray(uint=start_addr, length=32), burst_data  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                )
+                start_addr = int(addr)
+                burst_data = []
+            prev_addr = int(addr)
+            burst_data.append(BitArray(uint=int(word), length=32))
+
+        # Create the final burst
+        vectors += self.read32_no_loop(BitArray(uint=start_addr, length=32), burst_data)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
         return vectors
 
     # def wait_for_end_of_computation(self, expected_return_code:int, retries=10, idle_cycles=100):
@@ -324,4 +463,3 @@ class PULPJtagTapVega(JTAGTap):
     #     idle_vectors += self.driver.jtag_idle_vectors(count=8 - len(idle_vectors) % 8)
     #     vectors = self.driver.vector_builder.matched_loop(condition_vectors, idle_vectors, retries=retries)
     #     return vectors
-

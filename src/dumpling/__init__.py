@@ -7,10 +7,11 @@ try:
     __version__ = get_distribution(dist_name).version
     try:
         import dumpling.Common.Simulation
+
         __sim_enabled__ = True
     except ImportError:
         __sim_enabled__ = False
 except DistributionNotFound:
-    __version__ = 'unknown'
+    __version__ = "unknown"
 finally:
     del get_distribution, DistributionNotFound

@@ -1,7 +1,7 @@
 # Manuel Eggimann <meggimann@iis.ee.ethz.ch>
 #
 # Copyright (C) 2020-2022 ETH Zürich
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,7 +13,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from bitstring import BitArray
+from typing import TYPE_CHECKING, Optional, List
+
+
+from dumpling.Common.VectorBuilder import NormalVector
+
+if TYPE_CHECKING:
+    from dumpling.Drivers.JTAG import JTAGDriver
+
 
 class JTAGRegister:
     """
@@ -25,17 +32,35 @@ class JTAGRegister:
         e.g. "0100111")
         default number.
     """
-    def __init__(self, name, IR_value, DR_size, default_value:str=None):
+
+    name: str
+    IR_value: str
+    DR_size: int
+    default_value: Optional[str]
+    tap: Optional["JTAGTap"]
+
+    def __init__(
+        self,
+        name: str,
+        IR_value: str,
+        DR_size: int,
+        default_value: Optional[str] = None,
+    ):
         self.name = name
         self.IR_value = IR_value
         self.DR_size = DR_size
         self.default_value = default_value
         self.tap = None
 
-    def atach(self, tap: 'JTAGTap'):
+    def atach(self, tap: "JTAGTap") -> None:
         self.tap = tap
 
-    def read(self, reg_length = None, expected_value:str=None, comment=""):
+    def read(
+        self,
+        reg_length: Optional[int] = None,
+        expected_value: Optional[str] = None,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
         """
         A convenience function to generate vectors to read from a JTAG register using dot notation (e.g. my_tap.reg1.read().
 
@@ -53,34 +78,47 @@ class JTAGRegister:
             List[Mapping]: A list of vectors
         """
         if self.tap is None:
-            raise ValueError("Cannot read from a JTAGRegister that has not yet been attached to a JTAGTap. Please call reg.attach(tap) first.")
-        return self.tap.driver.read_reg(self.tap, self, self.DR_size if reg_length is None else reg_length, expected_value, comment)
+            raise ValueError(
+                "Cannot read from a JTAGRegister that has not yet been attached to a JTAGTap. Please call reg.attach(tap) first."
+            )
+        return self.tap.driver.read_reg(
+            self.tap,
+            self,
+            self.DR_size if reg_length is None else reg_length,
+            expected_value,
+            comment,
+        )
 
 
 class JTAGTap:
     """
-        Create a JTAGTap config object with a user defineable name and the given IR register size in bits.
+    Create a JTAGTap config object with a user defineable name and the given IR register size in bits.
 
-        The constructor will automatically add the BYPASS register to the JTAGTap object using the IR_size to determine
-        the BYPASS register's IR value.
+    The constructor will automatically add the BYPASS register to the JTAGTap object using the IR_size to determine
+    the BYPASS register's IR value.
 
-        Create subclasses of this class that implement tap specific functions. That 'driver' field contains a handle
-        to the jtag_driver and allows interaction with jtag chain.
+    Create subclasses of this class that implement tap specific functions. That 'driver' field contains a handle
+    to the jtag_driver and allows interaction with jtag chain.
 
-        Args:
-            name(str): The human readable name of this TAP
-            IR_size(int): The IR size of this TAP in bits
-            driver('JTAGDriver')
-        """
+    Args:
+        name(str): The human readable name of this TAP
+        IR_size(int): The IR size of this TAP in bits
+        driver('JTAGDriver')
+    """
 
-    def __init__(self, name, IR_size, driver: 'JTAGDriver'):
+    name: str
+    IR_size: int
+    driver: "JTAGDriver"
+    reg_bypass: JTAGRegister
+
+    def __init__(self, name: str, IR_size: int, driver: "JTAGDriver"):
         self.name = name
         self.IR_size = IR_size
         self.registers = []
         self.driver = driver
-        self.reg_bypass = self._add_reg(JTAGRegister('BYPASS', IR_size * "1", 1))
+        self.reg_bypass = self._add_reg(JTAGRegister("BYPASS", IR_size * "1", 1))
 
-    def _add_reg(self, jtag_reg: JTAGRegister):
+    def _add_reg(self, jtag_reg: JTAGRegister) -> JTAGRegister:
         self.registers.append(jtag_reg)
         jtag_reg.atach(self)
         return jtag_reg

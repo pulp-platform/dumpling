@@ -1,7 +1,7 @@
 # Manuel Eggimann <meggimann@iis.ee.ethz.ch>
 #
 # Copyright (C) 2020-2022 ETH Zürich
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,13 +13,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+""" Provides the JTAGDriver class for high lever JTAG FSM vector bitbanging """
+
+from typing import List, Optional
+
 import bitstring
 from bitstring import BitArray
 
 from dumpling.JTAGTaps.JTAGTap import JTAGTap, JTAGRegister
 
-bitstring.lsb0 = True #Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
+from dumpling.Common.VectorBuilder import NormalVector
+
+bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.VectorBuilder import VectorBuilder
+
+from dumpling.Common.Utilities import pp_binstr
+
 
 class JTAGDriver:
     """
@@ -67,11 +77,15 @@ class JTAGDriver:
         vector_builder(VectorBuilder): A handle to a configured vector builder.
 
     """
+
+    vector_builder: VectorBuilder
+    chain: List[JTAGTap]
+
     def __init__(self, vector_builder: VectorBuilder):
         self.vector_builder = vector_builder
         self.chain = []
 
-    def set_jtag_default_values(self):
+    def set_jtag_default_values(self) -> None:
         """
         Apply default (idle) values to the jtag pins.
 
@@ -81,13 +95,13 @@ class JTAGDriver:
         Returns:
 
         """
-        self.vector_builder.tck = '0'
-        self.vector_builder.trst = '1'
-        self.vector_builder.tms = '0'
-        self.vector_builder.tdi = '0'
-        self.vector_builder.tdo = 'X'
+        self.vector_builder.tck = "0"
+        self.vector_builder.trst = "1"
+        self.vector_builder.tms = "0"
+        self.vector_builder.tdi = "0"
+        self.vector_builder.tdo = "X"
 
-    def add_tap(self, jtag_tap: JTAGTap):
+    def add_tap(self, jtag_tap: JTAGTap) -> None:
         """
         Adds a new JTAG TAP to the chain controlled by this driver instance.
 
@@ -107,8 +121,9 @@ class JTAGDriver:
         """
         self.chain.insert(0, jtag_tap)
 
-
-    def jtag_idle_vector(self, repeat=1, comment=None):
+    def jtag_idle_vector(
+        self, repeat: int = 1, comment: Optional[str] = None
+    ) -> NormalVector:
         """
         Returns a single vector with the given 'repeat' value to keep the JTAG interface idle.
 
@@ -124,23 +139,23 @@ class JTAGDriver:
         self.set_jtag_default_values()
         return self.vector_builder.vector(repeat=repeat, comment=comment)
 
-    def jtag_idle_vectors(self, count=1):
+    def jtag_idle_vectors(self, count: int = 1) -> List[NormalVector]:
         """
         Returns a list of JTAG idle vectors of the given length.
 
         This function does basically the same as jtag_idle_vector but will just return a list with the required
-        number of jtag idle vectors as element instead of making us of the repeat value of the vector.
+        number of jtag idle vectors as element instead of making use of the repeat value of the vector.
 
-        Args:
+        Args:'dumpling.Drivers.JTAGDriver'
             count: The number of jtag idle vectors to return
 
         Returns:
             List[Mapping]: A list of vectors
 
         """
-        return count*[self.jtag_idle_vector()]
+        return count * [self.jtag_idle_vector()]
 
-    def jtag_reset(self):
+    def jtag_reset(self) -> List[NormalVector]:
         """
         Returns vectors to reset the jtag interface.
 
@@ -151,16 +166,16 @@ class JTAGDriver:
         """
         vectors = []
         self.set_jtag_default_values()
-        self.vector_builder.trst = '0'
+        self.vector_builder.trst = "0"
         vectors += [self.vector_builder.vector(comment="JTAG Reset")]
-        vectors += 9*[self.vector_builder.vector()]
-        self.vector_builder.trst = '1'
-        self.vector_builder.tck = '1'
-        self.vector_builder.tms = '0'
-        vectors += 10*[self.vector_builder.vector()]
+        vectors += 9 * [self.vector_builder.vector()]
+        self.vector_builder.trst = "1"
+        self.vector_builder.tck = "1"
+        self.vector_builder.tms = "0"
+        vectors += 10 * [self.vector_builder.vector()]
         return vectors
 
-    def jtag_goto_shift_dr(self, comment=""):
+    def jtag_goto_shift_dr(self, comment: Optional[str] = None) -> List[NormalVector]:
         """
         Return vectors to enter the Shifr DR state.
 
@@ -172,16 +187,16 @@ class JTAGDriver:
         """
         vectors = []
         self.set_jtag_default_values()
-        self.vector_builder.tms = '1'
-        self.vector_builder.tck = '0'  # Always change TMS and TDI one cycle earlier
+        self.vector_builder.tms = "1"
+        self.vector_builder.tck = "0"  # Always change TMS and TDI one cycle earlier
         vectors.append(self.vector_builder.vector(comment=comment))
-        self.vector_builder.tck = '1'
-        self.vector_builder.tms = '0'
+        self.vector_builder.tck = "1"
+        self.vector_builder.tms = "0"
         vectors.append(self.vector_builder.vector())
         vectors.append(self.vector_builder.vector(comment="Goto shift DR"))
         return vectors
 
-    def jtag_goto_shift_ir(self, comment=""):
+    def jtag_goto_shift_ir(self, comment: Optional[str] = None) -> List[NormalVector]:
         """
         Return vectors to enter the Shifr IR state.
 
@@ -193,17 +208,23 @@ class JTAGDriver:
         """
         vectors = []
         self.set_jtag_default_values()
-        self.vector_builder.tms = '1'
-        self.vector_builder.tck = '0'  # Always change TMS and TDI one cycle earlier
+        self.vector_builder.tms = "1"
+        self.vector_builder.tck = "0"  # Always change TMS and TDI one cycle earlier
         vectors.append(self.vector_builder.vector(comment=comment))
-        self.vector_builder.tck = '1'
+        self.vector_builder.tck = "1"
         vectors.append(self.vector_builder.vector())
-        self.vector_builder.tms = '0'
+        self.vector_builder.tms = "0"
         vectors.append(self.vector_builder.vector())
         vectors.append(self.vector_builder.vector(comment="Goto shift IR"))
         return vectors
 
-    def jtag_shift(self, chain, expected_chain=None, comment="", noexit=False):
+    def jtag_shift(
+        self,
+        chain: str,
+        expected_chain: Optional[str] = None,
+        comment: Optional[str] = None,
+        noexit: bool = False,
+    ) -> List[NormalVector]:
         """
         Shift the given value into the JTAG chain optionally matching with an expected value during readout.
 
@@ -227,38 +248,57 @@ class JTAGDriver:
             List[Mapping]: A list of vectors
         """
         self.set_jtag_default_values()
-        self.vector_builder.tck = '1'
-        self.vector_builder.tms = '0'
+        self.vector_builder.tck = "1"
+        self.vector_builder.tms = "0"
         vectors = []
+        if comment is None:
+            comment = ""
         comment += "/Start shifting. "
         # Shift in the values
         for idx, bit in enumerate(chain):
             self.vector_builder.tdi = bit
             # Check if expected_chain != None and doesn't only contain don't care
-            if expected_chain and not all(map(lambda x: x in ['x', 'X'], expected_chain)):
+            if expected_chain and not all(
+                map(lambda x: x in ["x", "X"], expected_chain)
+            ):
                 self.vector_builder.tdo = expected_chain[idx]
             if idx == len(chain) - 1 and not noexit:
-                self.vector_builder.tms = '1'
-            vectors.append(self.vector_builder.vector(comment=comment + "Shift bit {}".format(bit) + (" expecting tdo {}".format(expected_chain[idx]) if expected_chain else "")))
-            comment = "" # Only write full comment for first shift cycle
+                self.vector_builder.tms = "1"
+            vectors.append(
+                self.vector_builder.vector(
+                    comment=comment
+                    + "Shift bit {}".format(bit)
+                    + (
+                        " expecting tdo {}".format(expected_chain[idx])
+                        if expected_chain
+                        else ""
+                    )
+                )
+            )
+            comment = ""  # Only write full comment for first shift cycle
 
         # Update and go to idle
         if not noexit:
             vectors.append(self.vector_builder.vector(comment="goto Update DR/IR"))
-            self.vector_builder.tms = '0'
+            self.vector_builder.tms = "0"
             vectors.append(self.vector_builder.vector(comment="goto run test idle"))
             vectors.append(self.vector_builder.vector(comment="idle"))
         return vectors
 
-    def jtag_set_ir(self, tap: JTAGTap, ir_value, comment=""):
-        """
-        Sets the IR value LSB first of the given JTAG tap while putting all other taps of the chain into BYPASS mode.
+    def jtag_set_ir(
+        self, tap: JTAGTap, ir_value: str, comment: Optional[str] = None
+    ) -> List[NormalVector]:
+        """Sets the IR value LSB first of the given JTAG tap while putting all other taps of the chain into BYPASS mode.
 
         The ir_value is a binary string and shifted LSB first (thus right to left) as oposed to the `jtag_shift`
         function. Since the driver is aware of the additional TAPs besided the targeted TAP, the IR length of
         additional JTAG TAPs in the chain do not have to be accounted for when chosing the IR_VALUE. The driver will
         automatically pad the `ir_value` with the appropriate bits to put all other TAPs before and/or after the
         target TAP into bypass mode.
+
+        Important: ir_value is supposed to be in MSB-first order. I.e.
+        ir_value[0] must be the MSB. The function internally reverses the order
+        for LSB-first streamout.
 
         Args:
             tap(JTAGTap): The TAP for which the ir_value should be set.
@@ -267,23 +307,38 @@ class JTAGDriver:
 
         Returns:
             List[Mapping]: A list of vectors
+
         """
-        comment += "/Set IR of tap {} to [{}]".format(tap.name, BitArray(bin=ir_value))
+        if comment is None:
+            comment = ""
+        comment += "/Set IR of tap {} to {}".format(
+            tap.name, pp_binstr(BitArray(bin=ir_value))
+        )
         vectors = self.jtag_goto_shift_ir(comment)
         chain = ""
         for chain_elem in self.chain:
             if chain_elem == tap:
+                # JTAG is LSB first
                 chain += ir_value[::-1]
             else:
+                # JTAG is LSB first
                 chain += chain_elem.reg_bypass.IR_value[::-1]
 
         # Now we are in Shift IR state
         vectors += self.jtag_shift(chain, comment=comment)
         return vectors
 
-    def jtag_set_dr(self, tap: JTAGTap, dr_value, expected_dr_value=None, comment="", noexit=False):
+    def jtag_set_dr(
+        self,
+        tap: JTAGTap,
+        dr_value: str,
+        expected_dr_value: Optional[str] = None,
+        comment: Optional[str] = None,
+        noexit: bool = False,
+    ) -> List[NormalVector]:
         """
-        Writes the given `dr_value` into the chosen JTAG tap's data register (DR).
+        Sets the DR value LSB first of the given JTAG tap. If expected_dr_value is not None, the read value will be matched against it. This function assumes that all other taps are in bypass mode.
+
 
         The dr_value is written LSB first and must only contain the bits that should actually end up in the DR of the
         `tap`. The driver assumes that all taps except of the targeted one have been brought into bypass mode (as is the
@@ -292,6 +347,8 @@ class JTAGDriver:
         the targeted TAP in the chain. The data shifted out of the target DR is compared with the optional
         `expected_dr_vaue`. After the shift operation, the JTAG FSM is brought back into "Run Test Idle" state unless
         `noexit` is True.
+
+        Important: Both, dr_value and expected_dr_value are expected in MSB first order. I.e. dr_value[0] must be the MSB.
 
         Args:
             tap(JTAGTap): The TAP for which the DR value should be
@@ -304,30 +361,44 @@ class JTAGDriver:
         Returns:
             List[Mapping]: A list of vectors
         """
-        """Sets the DR value LSB first of the given JTAG tap. If expected_dr_value is not None, the read value will be matched against it. This function assumes that all other taps are in bypass mode."""
-        comment += "/Set DR of tap {} to [{}]".format(tap.name, BitArray(bin=dr_value))
-        if expected_dr_value and not all(map(lambda x: x in ['x', 'X'], expected_dr_value)):
+        if comment is None:
+            comment = ""
+        comment += "/Set DR of tap {} to {}".format(
+            tap.name, pp_binstr(BitArray(bin=dr_value))
+        )
+        if expected_dr_value and not all(
+            map(lambda x: x in ["x", "X"], expected_dr_value)
+        ):
             comment += " expecting to read {}".format(expected_dr_value)
         vectors = self.jtag_goto_shift_dr(comment)
         # Now we are in Shift DR state
         chain = ""
         for chain_elem in self.chain:
             if chain_elem == tap:
+                # JTAG is LSB first, so we have to reverse the order
                 chain += dr_value[::-1]
             else:
-                chain += '0'
+                chain += "0"
 
         expected_chain = ""
         if expected_dr_value:
             for chain_elem in self.chain:
                 if chain_elem == tap:
+                    # JTAG is LSB first, so we have to reverse the order
                     expected_chain += expected_dr_value[::-1]
                 else:
-                    expected_chain += 'X'
+                    expected_chain += "X"
         vectors += self.jtag_shift(chain, expected_chain, comment, noexit)
         return vectors
 
-    def read_reg(self, tap: JTAGTap, reg: JTAGRegister, reg_length, expected_value=None, comment=""):
+    def read_reg(
+        self,
+        tap: JTAGTap,
+        reg: JTAGRegister,
+        reg_length: int,
+        expected_value: Optional[str] = None,
+        comment: Optional[str] = None,
+    ) -> List[NormalVector]:
         """
         Read a given JTAG register from a targeted tap and match the value with an expected one.
 
@@ -342,7 +413,7 @@ class JTAGDriver:
             tap(JTAGTap): The tap from which to read.
             reg(JTAGRegister): An JTAG register within the specified tap from which to read.
             reg_length(int): The number of bits to read from the JTAG register.
-            expected_value(str): An optionial expected DR_value whith which the DR value read is compared.
+            expected_value(str): An optional expected DR_value (MSB-to-LSB) with which the DR value read is compared.
             comment(str): An optional comment with which to annotate the generated vectors
 
         Returns:
@@ -350,12 +421,21 @@ class JTAGDriver:
         """
         vectors = []
         if not reg in tap.registers:
-            raise ValueError("The supplied JTAG register does belong to the supplied JTAG tap")
+            raise ValueError(
+                "The supplied JTAG register does belong to the supplied JTAG tap"
+            )
         vectors += self.jtag_set_ir(tap, reg.IR_value, comment=comment)
-        vectors += self.jtag_set_dr(tap, dr_value=reg_length * '0', expected_dr_value=expected_value, comment="Read value from DR. Expected value: {}".format(expected_value))
+        vectors += self.jtag_set_dr(
+            tap,
+            dr_value=reg_length * "0",
+            expected_dr_value=expected_value,
+            comment="Read value from DR. Expected value: {}".format(expected_value),
+        )
         return vectors
 
-    def write_reg(self, tap, reg, value, comment=""):
+    def write_reg(
+        self, tap: JTAGTap, reg: JTAGRegister, value: str, comment: Optional[str] = None
+    ) -> List[NormalVector]:
         """
         Write the desired `value` to a given JTAG register of a targeted tap.
 
@@ -368,7 +448,7 @@ class JTAGDriver:
         Args:
             tap(JTAGTap): The tap from which to read.
             reg(JTAGRegister): An JTAG register within the specified tap from which to read.
-            value(str): The value to be shifted into the chosen JTAG register, LSB (right) first to MSB (left).
+            value(str): The value to be shifted into the chosen JTAG register, (MSB-to-LSB)
             comment(str): An optional comment with which to annotate the generated vectors
 
         Returns:
@@ -376,7 +456,11 @@ class JTAGDriver:
         """
         vectors = []
         if not reg in tap.registers:
-            raise ValueError("The supplied JTAG register does belong to the supplied JTAG tap")
+            raise ValueError(
+                "The supplied JTAG register does belong to the supplied JTAG tap"
+            )
         vectors += self.jtag_set_ir(tap, reg.IR_value, comment=comment)
-        vectors += self.jtag_set_dr(tap, dr_value=value, comment="Write value {} to DR.".format(value))
+        vectors += self.jtag_set_dr(
+            tap, dr_value=value, comment="Write value {} to DR.".format(value)
+        )
         return vectors

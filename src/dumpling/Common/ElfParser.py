@@ -19,8 +19,7 @@
 #
 # Authors: Germain Haugou, ETH (germain.haugou@iis.ee.ethz.ch)
 #
-from pathlib import Path
-from typing import Union
+from typing import MutableMapping, List, Mapping
 
 from elftools.elf.elffile import ELFFile
 import os
@@ -34,14 +33,18 @@ class ElfParser(object):
     A helper class to parse ELF binaries and extract the relevant segments for preloading as well as the start address.
     """
 
-    def __init__(self, verbose=False):
+    binaries: List[os.PathLike]
+    mem: MutableMapping[str, int]
+    verbose: bool
+
+    def __init__(self, verbose: bool = False):
         self.binaries = []
         self.mem = {}
         self.verbose = verbose
         self.areas = []
-        logging.info('Created stimuli generator')
+        logging.info("Created stimuli generator")
 
-    def get_entry(self):
+    def get_entry(self) -> int:
         """
         Return the entry point of the ELF binary (the address where the core should start execution).
 
@@ -49,12 +52,11 @@ class ElfParser(object):
             int: The entry point address as an integer.
 
         """
-        with open(self.binaries[0], 'rb') as file:
+        with open(self.binaries[0], "rb") as file:
             elffile = ELFFile(file)
-            return elffile.header['e_entry']
+            return elffile.header["e_entry"]
 
-
-    def add_binary(self, binary: Union[str, os.PathLike]):
+    def add_binary(self, binary: os.PathLike) -> None:
         """
         Add an additional binary to the ElfParser instance.
 
@@ -66,11 +68,10 @@ class ElfParser(object):
         Returns:
 
         """
-        logging.info('Added binary: %s', binary)
+        logging.info("Added binary: %s", binary)
         self.binaries.append(binary)
 
-
-    def parse_binaries(self, word_width):
+    def parse_binaries(self, word_width: int) -> Mapping[str, int]:
         """
         Parses the added binaries and returns a dictionary with addr, data pairs.
 
@@ -87,9 +88,7 @@ class ElfParser(object):
         self.__parse_binaries(word_width)
         return self.mem
 
-
-    def __add_mem_word(self, base, size, data, width):
-
+    def __add_mem_word(self, base: int, size: int, data: List[int], width: int) -> int:
         aligned_base = base & ~(width - 1)
 
         shift = base - aligned_base
@@ -102,14 +101,13 @@ class ElfParser(object):
             value = 0
 
         value &= ~(((1 << width) - 1) << (shift * 8))
-        value |= int.from_bytes(data[0:iter_size], byteorder='little') << (shift * 8)
+        value |= int.from_bytes(data[0:iter_size], byteorder="little") << (shift * 8)
 
         self.mem[str(aligned_base)] = value
 
         return iter_size
 
-    def __add_mem(self, base, size, data, width):
-
+    def __add_mem(self, base: int, size: int, data: List[int], width: int) -> None:
         while size > 0:
             iter_size = self.__add_mem_word(base, size, data, width)
 
@@ -117,34 +115,29 @@ class ElfParser(object):
             base += iter_size
             data = data[iter_size:]
 
-    def __gen_stim_slm(self, filename, width):
-
-        logging.info('  Generating to file: ' + filename)
+    def __gen_stim_slm(self, filename: os.PathLike, width: int) -> None:
+        logging.info(f"  Generating to file: {filename}")
 
         try:
             os.makedirs(os.path.dirname(filename))
         except:
             pass
 
-        with open(filename, 'w') as file:
+        with open(filename, "w") as file:
             for key in sorted(self.mem.keys()):
-                file.write('%X_%0*X\n' % (int(key), width * 2, self.mem.get(key)))
+                file.write("%X_%0*X\n" % (int(key), width * 2, self.mem.get(key)))
 
-    def __parse_binaries(self, width):
-
+    def __parse_binaries(self, width: int) -> None:
         self.mem = {}
 
         for binary in self.binaries:
-
-            with open(binary, 'rb') as file:
+            with open(binary, "rb") as file:
                 elffile = ELFFile(file)
 
                 for segment in elffile.iter_segments():
-
-                    if segment['p_type'] == 'PT_LOAD':
-
+                    if segment["p_type"] == "PT_LOAD":
                         data = segment.data()
-                        addr = segment['p_paddr']
+                        addr = segment["p_paddr"]
                         size = len(data)
 
                         load = True
@@ -156,29 +149,34 @@ class ElfParser(object):
                                     break
 
                         if load:
-
-                            logging.info('  Handling section (base: 0x%x, size: 0x%x)' % (addr, size))
+                            logging.info(
+                                "  Handling section (base: 0x%x, size: 0x%x)"
+                                % (addr, size)
+                            )
 
                             self.__add_mem(addr, size, data, width)
 
-                            if segment['p_filesz'] < segment['p_memsz']:
-                                addr = segment['p_paddr'] + segment['p_filesz']
-                                size = segment['p_memsz'] - segment['p_filesz']
-                                logging.info('  Init section to 0 (base: 0x%x, size: 0x%x)' % (addr, size))
+                            if segment["p_filesz"] < segment["p_memsz"]:
+                                addr = segment["p_paddr"] + segment["p_filesz"]
+                                size = segment["p_memsz"] - segment["p_filesz"]
+                                logging.info(
+                                    "  Init section to 0 (base: 0x%x, size: 0x%x)"
+                                    % (addr, size)
+                                )
                                 self.__add_mem(addr, size, [0] * size, width)
 
                         else:
+                            logging.info(
+                                "  Bypassing section (base: 0x%x, size: 0x%x)"
+                                % (addr, size)
+                            )
 
-                            logging.info('  Bypassing section (base: 0x%x, size: 0x%x)' % (addr, size))
-
-    def gen_stim_slm_64(self, stim_file):
-
+    def gen_stim_slm_64(self, stim_file: os.PathLike) -> None:
         self.__parse_binaries(8)
 
         self.__gen_stim_slm(stim_file, 8)
 
-    def gen_stim_bin(self, stim_file):
-
+    def gen_stim_bin(self, stim_file: os.PathLike) -> None:
         self.__parse_binaries(1)
 
         try:
@@ -186,14 +184,14 @@ class ElfParser(object):
         except:
             pass
 
-        with open(stim_file, 'wb') as file:
+        with open(stim_file, "wb") as file:
             prev_addr = None
             for key in sorted(self.mem.keys()):
                 addr = int(key)
                 if prev_addr is not None:
                     while prev_addr != addr - 1:
-                        file.write(struct.pack('B', 0))
+                        file.write(struct.pack("B", 0))
                         prev_addr += 1
 
                 prev_addr = addr
-                file.write(struct.pack('B', int(self.mem.get(key))))
+                file.write(struct.pack("B", int(self.mem[key])))

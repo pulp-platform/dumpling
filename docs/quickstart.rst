@@ -41,20 +41,7 @@ Generating Vectors Using the CLI
 
 For a selected number of chips you can use the *dumpling* CLI tool to generate a
 some commonly required vectors. The entry point for all of those scripts is the
-command ``dumpling``. To simplify the usage of the CLI, *dumpling* provides
-shell completion (TAB completion) for its arguments and subcommands. In order to
-benefit from this feature, the completions need to be installed for your shell
-of choice. This can be done without much effort using the
-``install_completions`` subcommand:
-
-.. code-block:: bash
-
-   dumpling install_completions
-
-This command will detect the shell that's currently in use (officially supported
-are bash, zsh, fish and Powershell) and install the shell completion by
-appending the required settings to your shell config file (e.g. `.bashrc` in
-case you are using `bash`).
+command ``dumpling``.
 
 Each supported chip is registered as subcommand of the CLI entry point
 ("dumpling") and provides a chip specific set of commands to generate vectors
