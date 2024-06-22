@@ -150,7 +150,7 @@ gpio_name_to_func_mode_map = {mode.name: mode for mode in gpio_func_modes}
 vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
-# Instantiate the two JTAG taps in vega
+# Instantiate the two JTAG taps in siracusa
 riscv_debug_tap = RISCVDebugTap(jtag_driver)
 pulp_tap = PULPJtagTap(jtag_driver)
 # Add the taps to the jtag chain in the right order
@@ -162,7 +162,7 @@ jtag_driver.add_tap(pulp_tap)
 pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 
 
-# Entry point for all vega related commands
+# Entry point for all siracusa related commands
 @click.group()
 @click.option(
     "--port-name", "-p", type=str, default="jtag_and_reset_port", show_default=True
@@ -183,7 +183,7 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 )
 @click.pass_context
 def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
-    """Generate stimuli for the GF22 vega chip."""
+    """Generate stimuli for the TSMC16 Siracusa chip."""
     # Instantiate the vector writer and attach it to the command context so subcommands can access it.
     vector_builder.init()
     ctx.obj = HP93000VectorWriter(
@@ -627,7 +627,7 @@ def halt_core_verify_pc(
     the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
-    dumpling vega -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
+    dumpling siracusa -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 
