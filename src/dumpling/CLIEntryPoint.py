@@ -4,6 +4,7 @@ import dumpling.Chips.Rosetta as Rosetta
 import click
 import click_completion
 from dumpling.Chips import Vega
+from dumpling.Chips import Heartstream
 
 click_completion.init()
 _CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -31,9 +32,11 @@ def install_completions(append, case_insensitive, shell, path):
 # Register first level subcommand
 cli.add_command(Rosetta.rosetta)
 cli.add_command(Vega.vega)
+cli.add_command(Heartstream.heartstream)
 
 
 # For debugging purposes only
 if __name__ == '__main__':
     #cli(['rosetta', '-o' 'test.avc', 'write-mem', '0x1c008080=0xdeadbeef'])
     cli(['rosetta', '-o' 'test.avc', 'halt-core-verify-pc'])
+    cli(['heartstream', '-o' 'test.avc', 'halt-core-verify-pc'])
