@@ -1,6 +1,6 @@
-# Manuel Eggimann <meggimann@iis.ee.ethz.ch>
+# Alessandro Ottaviano <aottaviano@iis.ee.ethz.ch>
 #
-# Copyright (C) 2020-2022 ETH Zürich
+# Copyright (C) 2024 ETH Zürich
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,148 +21,47 @@ from typing import Mapping
 
 import bitstring
 import click
+from dumpling.Common.ElfParser import ElfParser
 from bitstring import BitArray
 
-from dumpling.Common.ElfParser import ElfParser
-from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
+bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
 from dumpling.Common.HP93000 import HP93000VectorWriter
+from dumpling.JTAGTaps.PulpJTAGTap import PULPJtagTap
 from dumpling.Common.VectorBuilder import PinDecl, VectorBuilder
 from dumpling.Drivers.JTAG import JTAGDriver
 from dumpling.JTAGTaps.RISCVDebugTap import RISCVDebugTap, RISCVReg
 
-bitstring.lsb0 = True  # Enables the experimental mode to index LSB with 0 instead of the MSB (see thread https://github.com/scott-griffiths/bitstring/issues/156)
-
+# Pin Setup
 
 pins: Mapping[str, PinDecl] = {
-    "chip_reset": {"name": "reset_n", "default": "1", "type": "input"},
-    "trst": {"name": "jtag_trst", "default": "1", "type": "input"},
-    "tms": {"name": "jtag_tms", "default": "0", "type": "input"},
-    "tck": {"name": "jtag_tck", "default": "0", "type": "input"},
-    "tdi": {"name": "jtag_tdi", "default": "0", "type": "input"},
-    "tdo": {"name": "jtag_tdo", "default": "X", "type": "output"},
+    "chip_reset": {"name": "pad_rst_n", "default": "1", "type": "input"},
+    "trst": {"name": "pad_jtag_trstn", "default": "1", "type": "input"},
+    "tms": {"name": "pad_jtag_tms", "default": "0", "type": "input"},
+    "tck": {"name": "pad_jtag_tck", "default": "0", "type": "input"},
+    "tdi": {"name": "pad_jtag_tdi", "default": "0", "type": "input"},
+    "tdo": {"name": "pad_jtag_tdo", "default": "X", "type": "output"},
 }
-FC_CORE_ID = BitArray("0x003e0")
 
-GPIOFuncMode = namedtuple("GPIOFuncMode", ["value", "name", "help"])
-gpio_func_modes = [
-    GPIOFuncMode(
-        0,
-        "register",
-        "Connects the Pad to the internal configuration register. This is the default value.",
-    ),
-    GPIOFuncMode(
-        1, "port_gpio_gpio00", "Connect port gpio00 from port group gpio to this pad."
-    ),
-    GPIOFuncMode(
-        2, "port_i2c0_scl", "Connect port scl from port group i2c0 to this pad."
-    ),
-    GPIOFuncMode(
-        3, "port_i2c0_sda", "Connect port sda from port group i2c0 to this pad."
-    ),
-    GPIOFuncMode(
-        4, "port_i3c0_puc", "Connect port puc from port group i3c0 to this pad."
-    ),
-    GPIOFuncMode(
-        5, "port_i3c0_scl", "Connect port scl from port group i3c0 to this pad."
-    ),
-    GPIOFuncMode(
-        6, "port_i3c0_sda", "Connect port sda from port group i3c0 to this pad."
-    ),
-    GPIOFuncMode(
-        7, "port_i3c1_puc", "Connect port puc from port group i3c1 to this pad."
-    ),
-    GPIOFuncMode(
-        8, "port_i3c1_scl", "Connect port scl from port group i3c1 to this pad."
-    ),
-    GPIOFuncMode(
-        9, "port_i3c1_sda", "Connect port sda from port group i3c1 to this pad."
-    ),
-    GPIOFuncMode(
-        10, "port_qspim0_csn0", "Connect port csn0 from port group qspim0 to this pad."
-    ),
-    GPIOFuncMode(
-        11, "port_qspim0_csn1", "Connect port csn1 from port group qspim0 to this pad."
-    ),
-    GPIOFuncMode(
-        12, "port_qspim0_csn2", "Connect port csn2 from port group qspim0 to this pad."
-    ),
-    GPIOFuncMode(
-        13, "port_qspim0_csn3", "Connect port csn3 from port group qspim0 to this pad."
-    ),
-    GPIOFuncMode(
-        14, "port_qspim0_sck", "Connect port sck from port group qspim0 to this pad."
-    ),
-    GPIOFuncMode(
-        15,
-        "port_qspim0_sdio0",
-        "Connect port sdio0 from port group qspim0 to this pad.",
-    ),
-    GPIOFuncMode(
-        16,
-        "port_qspim0_sdio1",
-        "Connect port sdio1 from port group qspim0 to this pad.",
-    ),
-    GPIOFuncMode(
-        17,
-        "port_qspim0_sdio2",
-        "Connect port sdio2 from port group qspim0 to this pad.",
-    ),
-    GPIOFuncMode(
-        18,
-        "port_qspim0_sdio3",
-        "Connect port sdio3 from port group qspim0 to this pad.",
-    ),
-    GPIOFuncMode(
-        19, "port_qspis0_csn", "Connect port csn from port group qspis0 to this pad."
-    ),
-    GPIOFuncMode(
-        20, "port_qspis0_sck", "Connect port sck from port group qspis0 to this pad."
-    ),
-    GPIOFuncMode(
-        21,
-        "port_qspis0_sdio0",
-        "Connect port sdio0 from port group qspis0 to this pad.",
-    ),
-    GPIOFuncMode(
-        22,
-        "port_qspis0_sdio1",
-        "Connect port sdio1 from port group qspis0 to this pad.",
-    ),
-    GPIOFuncMode(
-        23,
-        "port_qspis0_sdio2",
-        "Connect port sdio2 from port group qspis0 to this pad.",
-    ),
-    GPIOFuncMode(
-        24,
-        "port_qspis0_sdio3",
-        "Connect port sdio3 from port group qspis0 to this pad.",
-    ),
-    GPIOFuncMode(
-        25, "port_uart0_rx", "Connect port rx from port group uart0 to this pad."
-    ),
-    GPIOFuncMode(
-        26, "port_uart0_tx", "Connect port tx from port group uart0 to this pad."
-    ),
-]
-gpio_name_to_func_mode_map = {mode.name: mode for mode in gpio_func_modes}
+FC_CORE_ID: BitArray = BitArray("0x003e0")  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
 
+# GPIO Functional Modes?
+
+# Minimal setup
 vector_builder = VectorBuilder(pins)
 jtag_driver = JTAGDriver(vector_builder)
 
-# Instantiate the two JTAG taps in siracusa
-riscv_debug_tap = RISCVDebugTap(jtag_driver)
-pulp_tap = PULPJtagTap(jtag_driver)
+# Instantiate the two JTAG taps in Kairos PULPissimo
+riscv_debug_tap = RISCVDebugTap(jtag_driver, "0x2f33ddb3")
+pulp_tap = PULPJtagTap(jtag_driver, "0x20cc2db3")
 # Add the taps to the jtag chain in the right order
 jtag_driver.add_tap(riscv_debug_tap)
 jtag_driver.add_tap(pulp_tap)
-
 
 # Commands
 pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
 
 
-# Entry point for all siracusa related commands
+# Entry point for all kairos related commands
 @click.group()
 @click.option(
     "--port-name", "-p", type=str, default="jtag_and_reset_port", show_default=True
@@ -182,8 +81,8 @@ pass_VectorWriter = click.make_pass_decorator(HP93000VectorWriter)
     default="dvc_1",
 )
 @click.pass_context
-def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
-    """Generate stimuli for the TSMC16 Siracusa chip."""
+def kairos(ctx, port_name, wtb_name, device_cycle_name, output):
+    """Generate stimuli for the TSMC65 Kairos chip."""
     # Instantiate the vector writer and attach it to the command context so subcommands can access it.
     vector_builder.init()
     ctx.obj = HP93000VectorWriter(
@@ -195,7 +94,7 @@ def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
     )
 
 
-@siracusa.command()
+@kairos.command()
 @click.option(
     "--elf",
     "-e",
@@ -212,7 +111,7 @@ def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
 @click.option(
     "--eoc-wait-cycles",
     "-w",
-    default=0,
+    default=6,
     type=click.IntRange(min=0),
     help="If set to a non zero integer, wait the given number of cycles for end of computation check and bdon't use ",
 )
@@ -238,6 +137,15 @@ def siracusa(ctx, port_name, wtb_name, device_cycle_name, output):
     help="Don't reset the chip before executing the binary. Helpfull for debugging and to keep custom config preloaded via "
     "JTAG.",
 )
+
+@click.option(
+    "--no-resume",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Don't resume the core."
+)
+
 @pass_VectorWriter
 def execute_elf(
     writer: HP93000VectorWriter,
@@ -247,6 +155,7 @@ def execute_elf(
     verify,
     compress,
     no_reset,
+    no_resume
 ):
     """Generate vectors to load and execute the given elf binary.
 
@@ -279,18 +188,18 @@ def execute_elf(
             vectors += jtag_driver.jtag_idle_vectors(10)
             vector_writer.write_vectors(vectors, compress=compress)
 
-        vectors += jtag_driver.jtag_idle_vectors(10)
-        vector_builder.chip_reset = 1
-        vectors += [vector_builder.vector(comment="Release hard reset")]
-        vector_writer.write_vectors(vectors, compress=compress)
+        #vectors += jtag_driver.jtag_idle_vectors(10)
+        #vector_builder.chip_reset = 1
+        #vectors += [vector_builder.vector(comment="Release hard reset")]
+        #vector_writer.write_vectors(vectors, compress=compress)
 
-        # Start boot procedure
-        # Halt fabric controller
-        vectors = riscv_debug_tap.init_dmi()
-        vectors += riscv_debug_tap.set_dmactive(True)
-        vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=100)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+        ## Start boot procedure
+        ## Halt fabric controller
+        #vectors = riscv_debug_tap.init_dmi()
+        #vectors += riscv_debug_tap.set_dmactive(True)
+        #vectors += riscv_debug_tap.halt_hart_no_loop(FC_CORE_ID, wait_cycles=100)
 
-        vector_writer.write_vectors(vectors, compress=compress)
+        #vector_writer.write_vectors(vectors, compress=compress)
 
         # Write the boot address into dpc
         parser = ElfParser()
@@ -320,35 +229,39 @@ def execute_elf(
         # Optionally verify the data we just wrote to L2
         if verify:
             vectors = pulp_tap.verifyL2_no_loop(
-                elf, comment="Verify the content of L2 to match the binary."
+                elf,
+                wait_cycles=eoc_wait_cycles,
+                comment="Verify the content of L2 to match the binary.",
             )
             vector_writer.write_vectors(vectors, compress=compress)
 
-        # Resume core
-        vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
-        vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=100)  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-        vector_writer.write_vectors(vectors, compress=compress)
-
-        # Wait for end of computation by polling EOC register address
-        if return_code != None:
-            if eoc_wait_cycles <= 0:
-                vectors = riscv_debug_tap.wait_for_end_of_computation(
-                    return_code, idle_vector_count=100, max_retries=10
-                )
-            else:
-                vectors = [
-                    jtag_driver.jtag_idle_vector(
-                        repeat=eoc_wait_cycles,
-                        comment="Waiting for computation to finish before checking EOC register.",
-                    )
-                ]
-                vectors += riscv_debug_tap.check_end_of_computation(
-                    return_code, wait_cycles=5000
-                )
+        if not no_resume:
+            # Resume core
+            vectors = riscv_debug_tap.init_dmi()  # Change JTAG IR to DMIACCESS
+            vectors += riscv_debug_tap.resume_harts(FC_CORE_ID,"Resuming core", retries=16)
+#            vectors += riscv_debug_tap.resume_harts_no_loop(FC_CORE_ID, wait_cycles=100)
             vector_writer.write_vectors(vectors, compress=compress)
 
+            # Wait for end of computation by polling EOC register address
+            if return_code != None:
+                if eoc_wait_cycles <= 0:
+                    vectors = riscv_debug_tap.wait_for_end_of_computation(
+                        return_code, idle_vector_count=100, max_retries=10
+                    )
+                else:
+                    vectors = [
+                        jtag_driver.jtag_idle_vector(
+                            repeat=eoc_wait_cycles,
+                            comment="Waiting for computation to finish before checking EOC register.",
+                        )
+                    ]
+                    vectors += riscv_debug_tap.check_end_of_computation(
+                        return_code, wait_cycles=5000
+                    )
+                    vector_writer.write_vectors(vectors, compress=compress)
 
-@siracusa.command()
+
+@kairos.command()
 @click.argument("address_value_mappings", nargs=-1)
 @click.option(
     "--verify/--no-verify",
@@ -369,9 +282,23 @@ def execute_elf(
     show_default=True,
     help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value.",
 )
+@click.option("--pulp/--riscv", default=False, help="If true, the RISC-V TAP is used.")
+@click.option(
+    "--wait-cycles",
+    type=click.IntRange(0),
+    default=6,
+    show_default=True,
+    help="The number of cycles to wait for the read operation to complete. Only relevant for PULP tap and not loop",
+)
 @pass_VectorWriter
 def write_mem(
-    vector_writer: HP93000VectorWriter, address_value_mappings, verify, loop, compress
+    vector_writer: HP93000VectorWriter,
+    address_value_mappings,
+    verify,
+    loop,
+    compress,
+    pulp,
+    wait_cycles,
 ):
     """
     Perform write transactions to the system bus.
@@ -411,28 +338,51 @@ def write_mem(
             )
 
     with vector_writer as writer:
-        vectors = pulp_tap.init_pulp_tap()
+        if pulp:
+            vectors = pulp_tap.init_pulp_tap()
+        else:
+            vectors = riscv_debug_tap.init_dmi()
+            vectors += riscv_debug_tap.set_sbcs(True)
         for address, value, comment in data:
-            vectors += pulp_tap.write32(
-                start_addr=address, data=[value], comment=comment if comment else ""
-            )
+            if pulp:
+                vectors += pulp_tap.write32(
+                    start_addr=address, data=[value], comment=comment if comment else ""
+                )
+            else:
+                vectors += riscv_debug_tap.writeMem(
+                    addr=address, data=value, comment=comment if comment else ""
+                )
             writer.write_vectors(vectors, compress=compress)
         if verify:
             for address, value, comment in data:
                 if loop:
-                    vectors = pulp_tap.read32(
-                        start_addr=address, expected_data=[value], comment=comment
-                    )
+                    if pulp:
+                        vectors = pulp_tap.read32(
+                            start_addr=address, expected_data=[value], comment=comment
+                        )
+                    else:
+                        vectors = riscv_debug_tap.readMem(
+                            addr=address, expected_data=value, comment=comment
+                        )
                 else:
-                    vectors = pulp_tap.read32_no_loop(
-                        start_addr=address,
-                        expected_data=[value],
-                        comment=comment if comment else "",
-                    )
+                    if pulp:
+                        vectors = pulp_tap.read32_no_loop(
+                            start_addr=address,
+                            expected_data=[value],
+                            wait_cycles=wait_cycles,
+                            comment=comment if comment else "",
+                        )
+                    else:
+                        vectors = riscv_debug_tap.readMem_no_loop(
+                            addr=address,
+                            expected_data=value,
+                            wait_cycles=wait_cycles,
+                            comment=comment,
+                        )
                 writer.write_vectors(vectors, compress=compress)
 
 
-@siracusa.command()
+@kairos.command()
 @click.argument("address_value_mappings", nargs=-1)
 @click.option(
     "--loop/--no-loop",
@@ -457,7 +407,7 @@ def write_mem(
 @click.option(
     "--wait-cycles",
     type=click.IntRange(0),
-    default=10,
+    default=6,
     show_default=True,
     help="The number of cycles to wait for the read operation to complete. Only relevant when pulp-tap is used",
 )
@@ -537,12 +487,12 @@ def verify_mem(
             writer.write_vectors(vectors, compress=compress)
 
 
-@siracusa.command()
+@kairos.command()
 @click.option(
     "--wait-cycles",
     "-w",
     type=click.IntRange(min=1),
-    default=10,
+    default=6,
     show_default=True,
     help="The number of cycles to wait before verifying that core was actually resumed.",
 )
@@ -556,13 +506,17 @@ def resume_core(vector_writer: HP93000VectorWriter, wait_cycles):
 
     with vector_writer as writer:
         vectors = riscv_debug_tap.init_dmi()
-        vectors += riscv_debug_tap.resume_harts_no_loop(
-            FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-        )
+
+        vectors += riscv_debug_tap.resume_harts(FC_CORE_ID,"Resuming core", retries=16)
+
+        #vectors += riscv_debug_tap.resume_harts_no_loop(
+        #    FC_CORE_ID, "Resuming core", wait_cycles=wait_cycles
+        #)
+
         writer.write_vectors(vectors)
 
 
-@siracusa.command()
+@kairos.command()
 @click.option(
     "--reset-cycles",
     "-r",
@@ -586,18 +540,18 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
         vectors += jtag_driver.jtag_idle_vectors(10)
         vectors += riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.set_dmactive(True)
-        vectors += jtag_driver.jtag_idle_vectors(10)
+        vectors += jtag_driver.jtag_idle_vectors(100000)
         writer.write_vectors(vectors)
 
 
-@siracusa.command()
+@kairos.command()
 @click.option(
     "--pc",
     type=str,
     help="Read programm counter and compare it with the expected value provided",
 )
 @click.option(
-    "--resume/--no-resume",
+    "--resume",
     show_default=True,
     default=False,
     help="Resume the core after reading the program counter.",
@@ -613,7 +567,7 @@ def reset_chip(vector_writer: HP93000VectorWriter, reset_cycles):
     "--wait-cycles",
     "-w",
     type=click.IntRange(min=1),
-    default=10,
+    default=6,
     show_default=True,
     help="The number of cycles to wait before verifying that core was actually halted.",
 )
@@ -627,7 +581,7 @@ def halt_core_verify_pc(
     the core, optionally read the programm counter and optionally resume the core.
 
     E.g.::
-    dumpling siracusa -o halt_core.avc halt_core_verify_pc --pc 0c1c008080 --resume
+    dumpling kairos -o halt_core halt_core_verify_pc --pc 0x1c008080 --resume
 
     Will halt the core, comparing the programm counter to the value 0x1c008080 and resuming the core afterwards.
 
@@ -640,7 +594,7 @@ def halt_core_verify_pc(
             vector_builder.chip_reset = 0
         vectors = riscv_debug_tap.init_dmi()
         vectors += riscv_debug_tap.halt_hart_no_loop(
-            FC_CORE_ID, wait_cycles=wait_cycles  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+            FC_CORE_ID, wait_cycles=wait_cycles
         )
         if pc:
             expected_pc = BitArray(pc)
@@ -653,172 +607,15 @@ def halt_core_verify_pc(
             )
             if resume:
                 vectors += riscv_debug_tap.resume_harts_no_loop(
-                    FC_CORE_ID, comment="Resuming the core", wait_cycles=wait_cycles  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
+                    FC_CORE_ID, comment="Resuming the core", wait_cycles=wait_cycles
                 )
         writer.write_vectors(vectors)
 
 
-@click.argument("gpio_nr", type=click.IntRange(0, 42))
-@click.argument(
-    "function", type=click.Choice(sorted(gpio_name_to_func_mode_map.keys()))
-)
-@siracusa.command()
-@pass_VectorWriter
-def configure_gpio(vector_writer: HP93000VectorWriter, gpio_nr, function):
-    """
-    Configure the provided GPIO to expose the desired function.
-
-    """
-    with vector_writer as writer:
-        vectors = pulp_tap.init_pulp_tap()
-        config_address = BitArray("0x1a140000") + 2 * gpio_nr
-        vectors += pulp_tap.write32(
-            start_addr=config_address,
-            data=[BitArray(gpio_name_to_func_mode_map[function].value)],  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-            comment=f"Configure GPIO{gpio_nr:02d} to {function}",
-        )
-        writer.write_vectors(vectors)
-
-
-@siracusa.command()
-@click.argument("PLL", type=click.Choice(["PLL1_SOC", "PLL2_CLUSTER", "PLL3_PER"]))
-@click.argument("MULT", type=click.IntRange(min=256, max=16383))
-@click.option(
-    "--enable/--disable",
-    default=True,
-    show_default=True,
-    help="Enable/Disable the PLL altogether. If disabled, the other options have no effect but are still programmed into the PLL",
-)
-@click.option(
-    "--clk-div",
-    default="1",
-    type=click.IntRange(min=1, max=16),
-    help="Change the clock division factor of DCO clock to PLL output clock.",
-)
-@click.option(
-    "--lock",
-    "-l",
-    is_flag=True,
-    default=True,
-    show_default=True,
-    help="Gate the output clock with the PLL lock signal",
-)
-@click.option(
-    "--lock-count",
-    default="16",
-    show_default=True,
-    type=click.Choice(["8", "16", "32", "64"]),
-    help="The number of stable cycles unil LOCK is asserted.",
-)
-@click.option(
-    "--vco-div/--no-vco-div",
-    default=True,
-    show_default=True,
-    type=bool,
-    help="Enable/Disable the fixed divide-by-2 VCO clock divider.",
-)
-@click.option(
-    "--failsafe_en/--no-failsafe_en",
-    default=True,
-    show_default=True,
-    type=bool,
-    help="Enable/Disable the failsafe feature within the PLL.",
-)
-@click.option(
-    "--freq_change_mask_count",
-    default=32,
-    show_default=True,
-    type=click.IntRange(0, 255),
-    help="The number of cycles to mask the output clock during frequency changes.",
-)
-@click.option(
-    "--wait-cycles",
-    "-w",
-    type=click.IntRange(min=1),
-    default=200,
-    show_default=True,
-    help="The number of jtag cycles to wait between writing the PLL config registers.",
-)
-@pass_VectorWriter
-def change_freq(
-    vector_writer: HP93000VectorWriter,
-    pll,
-    mult,
-    enable,
-    clk_div,
-    lock,
-    lock_count,
-    vco_div,
-    failsafe_en,
-    freq_change_mask_count,
-    wait_cycles,
-):
-    """Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
-
-    The FLL argument determines which of the three independent FLLs in Vega is configured. Which clock (soc_clk,
-    per_clk and cluster_clk) is derived from which FLL depends on the clock selection settings in the
-    APB_SOC_CONTROL module. By default, vega starts up using FLL1 for both, peripheral- (with some clk divider)
-    and soc-clock and FLL2 for the cluster clock.
-
-    The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>.
-
-    Since we need to write to two registers, we have to wait long enough for the FLL to become stable again before we try to modify the second registers.
-
-    """
-    with vector_writer as writer:
-        vectors = pulp_tap.init_pulp_tap()
-        if pll == "PLL1_SOC":
-            status_address = BitArray("0x1a100000")
-            cfg1_address = BitArray("0x1a100004")
-            cfg2_address = BitArray("0x1a100008")
-            cfg3_address = BitArray("0x1a10000C")
-        elif pll == "PLL2_CLUSTER":
-            status_address = BitArray("0x1a100010")
-            cfg1_address = BitArray("0x1a100014")
-            cfg2_address = BitArray("0x1a100018")
-            cfg3_address = BitArray("0x1a10001C")
-        else:
-            status_address = BitArray("0x1a100020")
-            cfg1_address = BitArray("0x1a100024")
-            cfg2_address = BitArray("0x1a100028")
-            cfg3_address = BitArray("0x1a10002C")
-        lock_count_value = round(math.log(int(lock_count), 2)) - 3
-        config1_value = bitstring.pack(
-            "bool, 0b1, 0b0, 0b0, uint:2, bool, 0b1, 0x000000",
-            enable,
-            lock_count_value,
-            lock,
-        )
-        config2_value = bitstring.pack(
-            "uint:14, uint:4, bool, bool, uint:8, 0x0",
-            mult,
-            clk_div - 1,
-            vco_div,
-            failsafe_en,
-            freq_change_mask_count,
-        )
-
-        vectors += pulp_tap.write32(
-            start_addr=cfg1_address,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-            data=[config1_value],
-            comment="Configure {} cfg1 to {}".format(pll, config1_value),
-        )
-        vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
-        vectors += pulp_tap.write32(
-            start_addr=cfg2_address,  # type: ignore until https://github.com/scott-griffiths/bitstring/issues/276 is closed
-            data=[config2_value],
-            comment="Configure {} cfg2 to {}".format(pll, config2_value),
-        )
-        vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
-        # vectors += pulp_tap.read32(start_addr=cfg1_address, expected_data=[config1_value], comment="Verifying {} value of cfg1 should be {}". format(pll, config1_value))
-        # vectors += pulp_tap.read32(start_addr=cfg2_address, expected_data=[config2_value],
-        #                            comment="Verifying {} value of cfg1 should be {}".format(pll, config2_value))
-        writer.write_vectors(vectors)
-
-
-@siracusa.command()
+@kairos.command()
 @click.option(
     "--return-code",
+    "-r",
     default=0,
     type=click.IntRange(min=0, max=255),
     show_default=True,
@@ -827,35 +624,132 @@ def change_freq(
 @click.option(
     "--wait-cycles",
     "-w",
-    type=click.IntRange(min=1),
-    default=10,
+    type=click.IntRange(min=-10),
+    default=6,
     show_default=True,
     help="The number of cycles to wait for the eoc_register read operation to complete.",
 )
+@click.option(
+    "--compress",
+    '-c',
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Compress all vectors by merging subsequent identical vectors into a single vector with increased repeat value."
+)
 @pass_VectorWriter
-def check_eoc(vector_writer, return_code, wait_cycles):
+def check_eoc(vector_writer, return_code, wait_cycles, compress):
     """Generate vectors to check for the end of computation.
 
     Programs compiled with the pulp-sdk or pulp-runtime write their exit code to a special end-of-computation register
     in APB SOC Control when they leave main. The expected return code (by default 0) can be modified to assume any value
     between 0 and 255."""
 
+    # Wait for end of computation by polling EOC register address
     with vector_writer as writer:
-        vectors = riscv_debug_tap.init_dmi()
-        vectors += riscv_debug_tap.check_end_of_computation(
-            return_code, wait_cycles=wait_cycles
-        )
-        writer.write_vectors(vectors)
+        if return_code != None:
+            if wait_cycles <= 0:
+                print("We are polling!")
+                vectors = riscv_debug_tap.wait_for_end_of_computation(return_code, idle_vector_count=500, max_retries=3000)
+            else:
+                vectors = [jtag_driver.jtag_idle_vector(repeat=wait_cycles, comment="Waiting for computation to finish before checking EOC register.")]
+                vectors += riscv_debug_tap.check_end_of_computation(return_code, wait_cycles=5000)
+            vector_writer.write_vectors(vectors, compress=compress)
+
+    #with vector_writer as writer:
+    #    vectors = riscv_debug_tap.init_dmi()
+    #    vectors += riscv_debug_tap.check_end_of_computation(
+    #        return_code, wait_cycles=wait_cycles
+    #    )
+    #    writer.write_vectors(vectors)
 
 
-@siracusa.command()
+@kairos.command()
 @pass_VectorWriter
 def verify_idcode(vector_writer):
     """Generate vectors to verify IDCODE of the RISC-V debug unit.
 
     Puts all taps except the debug unit into bypass mode and verifies the value of the debug units IDCODE register.
-    In Siracusa, the value should match "0x249511C3". After the idcode read-out, the debug unit TAP remains selected.
+    In Kairos, the value should match "0x2f33ddb3". After the idcode read-out, the debug unit TAP remains selected.
     """
     with vector_writer as writer:
         vectors = riscv_debug_tap.verify_idcode()
+        writer.write_vectors(vectors)
+
+@kairos.command()
+@click.argument("FREQ", type=click.IntRange(min=0, max=1000000000000))
+@click.option("--fll", default='SOC_FLL', type=click.Choice(['CLU_FLL','PER_FLL', 'SOC_FLL']))
+@click.option("--mult", default = '10', type=click.IntRange(min=1, max=65535))
+@click.option("--clk-div", default='4', type=click.Choice(['1','2','4','8','16','32','64','128','256']), help="Change the clock division factor of DCO clock to FLL output clock.")
+@click.option("--lock", '-l', is_flag = True, default=True, show_default=True, help="Gate the output clock with the FLL lock signal")
+@click.option("--tolerance", default=80, show_default=True, type=click.IntRange(min=0, max=2047), help="The margin around the target multiplication factor for clock to be considered stable.")
+@click.option("--stable-cycles", default=6, show_default=True, type=click.IntRange(min=0, max=63), help="The number of stable cycles unil LOCK is asserted.")
+@click.option("--unstable-cycles", default=16, show_default=True, type=click.IntRange(min=0, max=63), help="The number of unstable cycles unil LOCK is de-asserted.")
+@click.option("--enable-dithering", is_flag=True, default=False, show_default=True, help="Enable dithering for higher frequency resolution.")
+@click.option("--loop-gain-exponent", default=-8, type=click.IntRange(min=-15,max=0), show_default=True,  help="The gain exponent of the feedback loop. Gain = 2^<value>")
+@click.option('--wait-cycles','-w', type=click.IntRange(min=1), default=200, show_default=True, help="The number of jtag cycles to wait between writing the two FLL config registers.")
+@click.option("--pulp/--riscv", default=False, help="If true, the RISC-V TAP is used.")
+@pass_VectorWriter
+def change_freq(vector_writer: HP93000VectorWriter, freq, fll, mult, clk_div, lock, tolerance, stable_cycles, unstable_cycles, loop_gain_exponent, enable_dithering, wait_cycles, pulp):
+    """ Generate vectors to change the multiplication factor (MULT) and various other settings of the internal FLLs .
+
+        The FLL argument determines which of the two independent FLLs in Kairos is configured.
+
+        The output frequency of the FLL is freq =<ref_freq>*<MULT>/<clk-div>.
+
+        Since we need to write to two registers, we have to wait long enough for the FLL to become stable again before we try to modify the second registers.
+
+    """
+
+    # TODO: optionally write to a specific address in the memory space and read
+    #the frequency value from software. For now, uncomment if needed.
+    #magic_address = BitArray('0x1c040000')
+
+    if fll == "SOC_FLL":
+        config1_address = BitArray('0x1a100004')
+        config2_address = BitArray('0x1a100008')
+        config3_address = BitArray('0x1a10000c')
+    elif fll == "PER_FLL":
+        config1_address = BitArray('0x1a100014')
+        config2_address = BitArray('0x1a100018')
+    else:
+        config1_address = BitArray('0x1a100024')
+        config2_address = BitArray('0x1a100028')
+    clk_div_value = int(math.log2(int(clk_div)))+1
+    config1_value = bitstring.pack('0b1, bool, uint:4, uint:10=344, uint:16', lock, clk_div_value, mult)
+
+    freq_value = bitstring.pack('uint:32', freq)
+
+    config2_value = bitstring.pack('bool, 0b000, uint:12, uint:6, uint:6, uint:4',
+                                   enable_dithering,
+                                   tolerance,
+                                   stable_cycles, unstable_cycles, -loop_gain_exponent)
+
+    config3_value = bitstring.pack('uint:6=0, uint:10=322, uint:16=0')
+
+    with vector_writer as writer:
+        if pulp:
+            # Init pulp tap
+            vectors  = pulp_tap.init_pulp_tap()
+            # Set FLL registers
+            vectors += pulp_tap.write32(start_addr=config1_address, data=[config1_value], comment="[PULP_TAP] Configure {}".format(fll))
+            vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+            vectors += pulp_tap.write32(start_addr=config2_address, data=[config2_value], comment="[PULP_TAP] Configure {}".format(fll))
+            #vectors += pulp_tap.write32(start_addr=magic_address, data=[freq_value], comment="[PULP_TAP] Configure {}".format(fll))
+
+            vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+        else:
+            # Init riscv debug module
+            vectors = riscv_debug_tap.init_dmi()
+            vectors += riscv_debug_tap.set_sbcs(True)
+            # Set FLL registers
+            vectors += riscv_debug_tap.writeMem(addr=config2_address, data=config2_value, comment="[RISCV_DBG] Configure {}".format(fll))
+            vectors += riscv_debug_tap.writeMem(addr=config3_address, data=config3_value, comment="[RISCV_DBG] Configure {}".format(fll))
+            vectors += riscv_debug_tap.readMem(addr=config1_address, expected_data=config3_value, comment='')
+            vectors += [jtag_driver.jtag_idle_vector(repeat=50)]
+            vectors += riscv_debug_tap.writeMem(addr=config1_address, data=config1_value, comment="[RISCV_DBG] Configure {}".format(fll))
+            #vectors += riscv_debug_tap.writeMem(addr=magic_address, data=freq_value, comment="[RISCV_DBG] Configure {}".format(fll))
+
+            vectors += [jtag_driver.jtag_idle_vector(repeat=wait_cycles)]
+
         writer.write_vectors(vectors)
