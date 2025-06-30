@@ -21,6 +21,7 @@ from dumpling.Chips import Vega
 from dumpling.Chips import Siracusa
 from dumpling.Chips import Trikarenos
 from dumpling.Chips import Cerberus
+from dumpling.Chips import Chimera
 
 _CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -38,6 +39,7 @@ cli.add_command(Vega.vega)
 cli.add_command(Siracusa.siracusa)
 cli.add_command(Trikarenos.trikarenos)
 cli.add_command(Cerberus.cerberus)
+cli.add_command(Chimera.chimera)
 
 # For debugging purposes only
 if __name__ == "__main__":
